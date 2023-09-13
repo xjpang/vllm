@@ -14,6 +14,45 @@ from vllm.sequence import SamplerOutput, SequenceOutputs
 _SAMPLING_EPS = 1e-5
 
 
+class ArgmaxSampler(nn.Module):
+    def __init__(self, vocab_size: int) -> None:
+        super().__init__()
+        self.vocab_size = vocab_size
+
+    def forward(
+        self,
+        embedding: torch.Tensor,
+        hidden_states: torch.Tensor,
+        input_metadata: InputMetadata,
+        embedding_bias: Optional[torch.Tensor] = None,
+    ) -> Dict[int, SequenceOutputs]:
+        # Get the hidden states that we use for sampling.
+        hidden_states = _prune_hidden_states(hidden_states, input_metadata)
+
+        # Get the logits for the next tokens.
+        logits = torch.matmul(hidden_states, embedding.t())
+        if embedding_bias is not None:
+            logits += embedding_bias
+        logits = gather_from_tensor_model_parallel_region(logits)
+        # Remove paddings in vocab (if any).
+        logits = logits[:, :self.vocab_size]
+
+        next_token_ids = torch.argmax(logits, dim=-1)
+        seq_outputs = []
+
+        for i, seq_group in enumerate(input_metadata.seq_groups):
+            seq_ids, sampling_params = seq_group
+            assert sampling_params.best_of == 1
+            assert len(seq_ids) == 1
+            next_token_id = next_token_ids[i].item()
+            seq_id = seq_ids[0]
+            seq_outputs.append([SequenceOutputs(seq_id,
+                                                  next_token_id,
+                                                  {})])
+
+        return seq_outputs
+
+
 class Sampler(nn.Module):
     """Samples the next tokens from the model's outputs.
 

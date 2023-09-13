@@ -386,7 +386,7 @@ class LLMEngine:
             child_seqs.append((parent, parent))
 
         for seq, _ in child_seqs:
-            self._decode_sequence(seq)
+            # self._decode_sequence(seq)
             self._check_stop(seq, seq_group.sampling_params)
 
         # Non-beam search case

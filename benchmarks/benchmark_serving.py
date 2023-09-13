@@ -72,7 +72,7 @@ def sample_requests(
         if prompt_len > 1024 or prompt_len + output_len > 2048:
             # Prune too long sequences.
             continue
-        filtered_dataset.append((prompt, prompt_len, output_len))
+        filtered_dataset.append((prompt, prompt_token_ids, prompt_len, output_len))
 
     # Sample the requests.
     sampled_requests = random.sample(filtered_dataset, num_requests)
@@ -100,6 +100,7 @@ async def send_request(
     backend: str,
     api_url: str,
     prompt: str,
+    prompt_token_ids: List[int],
     prompt_len: int,
     output_len: int,
     best_of: int,
@@ -110,7 +111,8 @@ async def send_request(
     headers = {"User-Agent": "Benchmark Client"}
     if backend == "vllm":
         pload = {
-            "prompt": prompt,
+            # "prompt": prompt,
+            "prompt_token_ids": prompt_token_ids,
             "n": 1,
             "best_of": best_of,
             "use_beam_search": use_beam_search,
@@ -163,8 +165,8 @@ async def benchmark(
 ) -> None:
     tasks: List[asyncio.Task] = []
     async for request in get_request(input_requests, request_rate):
-        prompt, prompt_len, output_len = request
-        task = asyncio.create_task(send_request(backend, api_url, prompt,
+        prompt, prompt_token_ids, prompt_len, output_len = request
+        task = asyncio.create_task(send_request(backend, api_url, prompt, prompt_token_ids,
                                                 prompt_len, output_len,
                                                 best_of, use_beam_search))
         tasks.append(task)

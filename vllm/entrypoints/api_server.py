@@ -27,13 +27,16 @@ async def generate(request: Request) -> Response:
     - other fields: the sampling parameters (See `SamplingParams` for details).
     """
     request_dict = await request.json()
-    prompt = request_dict.pop("prompt")
+    prompt = request_dict.pop("prompt", None)
+    prompt_token_ids = request_dict.pop("prompt_token_ids", None)
+    assert prompt is not None or prompt_token_ids is not None
+    if prompt is None:
+        prompt = ""
     stream = request_dict.pop("stream", False)
     sampling_params = SamplingParams(**request_dict)
     request_id = random_uuid()
-
-    results_generator = engine.generate(prompt, sampling_params, request_id)
-
+    results_generator = engine.generate(prompt, sampling_params, request_id,
+                                        prompt_token_ids=prompt_token_ids)
     # Streaming case
     async def stream_results() -> AsyncGenerator[bytes, None]:
         async for request_output in results_generator:
