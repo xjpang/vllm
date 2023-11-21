@@ -2,9 +2,9 @@ import argparse
 import json
 from typing import AsyncGenerator
 
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-import uvicorn
 
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
@@ -54,7 +54,9 @@ async def generate(request: Request) -> Response:
             text_outputs = [
                 output.text for output in request_output.outputs
             ]
-            ret = {"text": text_outputs}
+            output_tokens = [output.token_ids for output in request_output.outputs]
+
+            ret = {"text": text_outputs, "output_token_ids": output_tokens}
             yield (json.dumps(ret) + "\0").encode("utf-8")
 
     if stream:
@@ -71,7 +73,8 @@ async def generate(request: Request) -> Response:
 
     assert final_output is not None
     text_outputs = [output.text for output in final_output.outputs]
-    ret = {"text": text_outputs}
+    output_tokens = [output.token_ids for output in final_output.outputs]
+    ret = {"text": text_outputs, "output_token_ids": output_tokens}
     return JSONResponse(ret)
 
 
