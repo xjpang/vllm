@@ -17,6 +17,8 @@ _MODEL_REGISTRY = {
     "AquilaForCausalLM": AquilaForCausalLM,  # AquilaChat2
     "BaiChuanForCausalLM": BaiChuanForCausalLM,  # baichuan-7b
     "BaichuanForCausalLM": BaichuanForCausalLM,  # baichuan-13b
+    "BaiChuan2ForCausalLM": BaiChuan2ForCausalLM,  # baichuan2-rope
+    "Baichuan2ForCausalLM": Baichuan2ForCausalLM,  # baichuan2-alibi
     "BloomForCausalLM": BloomForCausalLM,
     "ChatGLMModel": ChatGLMForCausalLM,
     "FalconForCausalLM": FalconForCausalLM,
@@ -52,6 +54,14 @@ def _get_model_architecture(config: PretrainedConfig) -> Type[nn.Module]:
     architectures = getattr(config, "architectures", [])
     for arch in architectures:
         if arch in _MODEL_REGISTRY:
+            # baichuan 2 has different vocab size
+            if ("baichuan" in arch.lower()) and (getattr(config, "vocab_size")
+                                                 == 125696):
+                # baichuan 2 7b and 13b have different intermediate size
+                if getattr(config, "intermediate_size") == 11008:
+                    return BaiChuan2ForCausalLM
+                elif getattr(config, "intermediate_size") == 13696:
+                    return Baichuan2ForCausalLM
             return _MODEL_REGISTRY[arch]
     raise ValueError(
         f"Model architectures {architectures} are not supported for now. "
