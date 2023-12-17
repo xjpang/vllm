@@ -17,8 +17,8 @@ from vllm.sequence import (SamplerOutput, Sequence, SequenceGroup,
                            SequenceGroupMetadata, SequenceGroupOutput,
                            SequenceOutput, SequenceStatus)
 from vllm.transformers_utils.tokenizer import (detokenize_incrementally,
-                                               MultiLoRATokenizer)
-from vllm.utils import Counter
+                                               get_tokenizer, MultiLoRATokenizer)
+from vllm.utils import Counter, get_open_port
 
 if ray:
     from ray.air.util.torch_dist import init_torch_dist_process_group
@@ -86,6 +86,7 @@ class LLMEngine:
             f"load_format={model_config.load_format}, "
             f"tensor_parallel_size={parallel_config.tensor_parallel_size}, "
             f"quantization={model_config.quantization}, "
+            f"enforce_eager={model_config.enforce_eager}, "
             f"seed={model_config.seed})")
         # TODO(woosuk): Print more configs in debug mode.
 
@@ -201,6 +202,7 @@ class LLMEngine:
                           ))
         self._run_workers(
             "init_model",
+            cupy_port=get_open_port(),
             get_all_outputs=True,
         )
         self._run_workers(
@@ -248,6 +250,9 @@ class LLMEngine:
 
         # Initialize the cache.
         self._run_workers("init_cache_engine", cache_config=self.cache_config)
+        # Warm up the model. This includes capturing the model into CUDA graph
+        # if enforce_eager is False.
+        self._run_workers("warm_up_model")
 
     @classmethod
     def from_engine_args(cls, engine_args: EngineArgs) -> "LLMEngine":
