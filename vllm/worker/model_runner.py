@@ -1,22 +1,22 @@
-from typing import Dict, List, Optional, Tuple, Set
 import time
 from typing import Dict, List, Tuple, Union
+from typing import Optional, Set
 
 import numpy as np
 import torch
 import torch.nn as nn
 
-from vllm.config import ModelConfig, LoRAConfig, ParallelConfig, SchedulerConfig
+from vllm.config import LoRAConfig, ModelConfig, ParallelConfig, SchedulerConfig
 from vllm.logger import init_logger
-from vllm.model_executor import get_model, InputMetadata, SamplingMetadata
-from vllm.sampling_params import SamplingParams, SamplingType
-from vllm.sequence import SamplerOutput, SequenceData, SequenceGroupMetadata
+from vllm.lora.layers import LoRAMapping
+from vllm.lora.request import LoRARequest
 from vllm.lora.worker_manager import (
     DisabledWorkerLoRAManager,
     LRUCacheWorkerLoRAManager,
 )
-from vllm.lora.layers import LoRAMapping
-from vllm.lora.request import LoRARequest
+from vllm.model_executor import InputMetadata, SamplingMetadata, get_model
+from vllm.sampling_params import SamplingParams, SamplingType
+from vllm.sequence import SamplerOutput, SequenceData, SequenceGroupMetadata
 
 logger = init_logger(__name__)
 
@@ -31,11 +31,11 @@ LORA_WARMUP_RANK = 8
 class ModelRunner:
 
     def __init__(
-        self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        scheduler_config: SchedulerConfig,
-        lora_config: Optional[LoRAConfig],
+            self,
+            model_config: ModelConfig,
+            parallel_config: ParallelConfig,
+            scheduler_config: SchedulerConfig,
+            lora_config: Optional[LoRAConfig],
     ):
         self.model_config = model_config
         self.parallel_config = parallel_config
@@ -91,10 +91,10 @@ class ModelRunner:
             (max(_BATCH_SIZES_TO_CAPTURE), max_num_blocks), dtype=np.int32)
 
     def _prepare_prompt(
-        self,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
+            self,
+            seq_group_metadata_list: List[SequenceGroupMetadata],
     ) -> Tuple[torch.Tensor, torch.Tensor, InputMetadata, List[int],
-               List[int]]:
+    List[int]]:
         assert len(seq_group_metadata_list) > 0
         input_tokens: List[List[int]] = []
         input_positions: List[List[int]] = []
@@ -181,10 +181,10 @@ class ModelRunner:
         return input_tokens, input_positions, input_metadata, lora_index_mapping, lora_prompt_mapping
 
     def _prepare_decode(
-        self,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
+            self,
+            seq_group_metadata_list: List[SequenceGroupMetadata],
     ) -> Tuple[torch.Tensor, torch.Tensor, InputMetadata, List[int],
-               List[int]]:
+    List[int]]:
         assert len(seq_group_metadata_list) > 0
         input_tokens: List[List[int]] = []
         input_positions: List[List[int]] = []
@@ -229,9 +229,9 @@ class ModelRunner:
         batch_size = len(input_tokens)
         max_context_len = max(context_lens)
         use_captured_graph = (
-            not self.model_config.enforce_eager
-            and batch_size <= _BATCH_SIZES_TO_CAPTURE[-1]
-            and max_context_len <= self.max_context_len_to_capture)
+                not self.model_config.enforce_eager
+                and batch_size <= _BATCH_SIZES_TO_CAPTURE[-1]
+                and max_context_len <= self.max_context_len_to_capture)
         if use_captured_graph:
             # Pad the input tokens, positions, and slot mapping to match the
             # batch size of the captured graph.
@@ -298,9 +298,9 @@ class ModelRunner:
         return input_tokens, input_positions, input_metadata, lora_index_mapping, lora_prompt_mapping
 
     def _prepare_sample(
-        self,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
-        prompt_lens: List[int],
+            self,
+            seq_group_metadata_list: List[SequenceGroupMetadata],
+            prompt_lens: List[int],
     ) -> Tuple[SamplingMetadata, Set[LoRARequest]]:
         seq_groups: List[Tuple[List[int], SamplingParams]] = []
         selected_token_indices: List[int] = []
@@ -327,7 +327,7 @@ class ModelRunner:
 
                 categorized_sample_indices[
                     sampling_params.sampling_type].append(
-                        categorized_sample_indices_start_idx)
+                    categorized_sample_indices_start_idx)
                 categorized_sample_indices_start_idx += 1
 
                 if sampling_params.prompt_logprobs is not None:
@@ -346,8 +346,8 @@ class ModelRunner:
 
                 categorized_sample_indices[
                     sampling_params.sampling_type].extend(
-                        range(categorized_sample_indices_start_idx,
-                              categorized_sample_indices_start_idx + num_seqs))
+                    range(categorized_sample_indices_start_idx,
+                          categorized_sample_indices_start_idx + num_seqs))
                 categorized_sample_indices_start_idx += num_seqs
 
         selected_token_indices = torch.tensor(selected_token_indices,
@@ -373,9 +373,9 @@ class ModelRunner:
 
     @torch.inference_mode()
     def execute_model(
-        self,
-        seq_group_metadata_list: List[SequenceGroupMetadata],
-        kv_caches: List[Tuple[torch.Tensor, torch.Tensor]],
+            self,
+            seq_group_metadata_list: List[SequenceGroupMetadata],
+            kv_caches: List[Tuple[torch.Tensor, torch.Tensor]],
     ) -> SamplerOutput:
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
@@ -523,6 +523,22 @@ class ModelRunner:
         # This usually takes < 10 seconds.
         logger.info(f"Graph capturing finished in {elapsed_time:.0f} secs.")
 
+    def remove_all_loras(self) -> bool:
+        return self.lora_manager.remove_all_loras()
+
+    def apply_loras(self, lora_requests: List[LoRARequest],
+                    lora_mapping: LoRAMapping) -> None:
+        self.lora_manager.apply_loras(lora_requests, lora_mapping)
+
+    def add_lora(self, lora_request: LoRARequest) -> bool:
+        return self.lora_manager.add_lora(lora_request)
+
+    def remove_lora(self, lora_id: int) -> bool:
+        return self.lora_manager.remove_lora(lora_id)
+
+    def list_loras(self) -> Set[int]:
+        return self.lora_manager.list_loras()
+
 
 class CUDAGraphRunner:
 
@@ -533,12 +549,12 @@ class CUDAGraphRunner:
         self.output_buffers: Dict[str, torch.Tensor] = {}
 
     def capture(
-        self,
-        input_ids: torch.Tensor,
-        positions: torch.Tensor,
-        kv_caches: List[KVCache],
-        input_metadata: InputMetadata,
-        memory_pool,
+            self,
+            input_ids: torch.Tensor,
+            positions: torch.Tensor,
+            kv_caches: List[KVCache],
+            input_metadata: InputMetadata,
+            memory_pool,
     ) -> None:
         assert self.graph is None
         # Run the model once without capturing the graph.
@@ -576,11 +592,11 @@ class CUDAGraphRunner:
         return
 
     def forward(
-        self,
-        input_ids: torch.Tensor,
-        positions: torch.Tensor,
-        kv_caches: List[Tuple[torch.Tensor, torch.Tensor]],
-        input_metadata: InputMetadata,
+            self,
+            input_ids: torch.Tensor,
+            positions: torch.Tensor,
+            kv_caches: List[Tuple[torch.Tensor, torch.Tensor]],
+            input_metadata: InputMetadata,
     ) -> torch.Tensor:
         # KV caches are fixed tensors, so we don't need to copy them.
         del kv_caches
@@ -601,22 +617,6 @@ class CUDAGraphRunner:
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
-    def remove_all_loras(self) -> bool:
-        return self.lora_manager.remove_all_loras()
-
-    def apply_loras(self, lora_requests: List[LoRARequest],
-                    lora_mapping: LoRAMapping) -> None:
-        self.lora_manager.apply_loras(lora_requests, lora_mapping)
-
-    def add_lora(self, lora_request: LoRARequest) -> bool:
-        return self.lora_manager.add_lora(lora_request)
-
-    def remove_lora(self, lora_id: int) -> bool:
-        return self.lora_manager.remove_lora(lora_id)
-
-    def list_loras(self) -> Set[int]:
-        return self.lora_manager.list_loras()
-
 
 def _pad_to_max(x: List[int], max_len: int, pad: int) -> List[int]:
     assert len(x) <= max_len
@@ -624,11 +624,11 @@ def _pad_to_max(x: List[int], max_len: int, pad: int) -> List[int]:
 
 
 def _make_tensor_with_pad(
-    x: List[List[int]],
-    max_len: int,
-    pad: int,
-    dtype: torch.dtype,
-    device: Union[str, torch.device] = "cuda",
+        x: List[List[int]],
+        max_len: int,
+        pad: int,
+        dtype: torch.dtype,
+        device: Union[str, torch.device] = "cuda",
 ) -> torch.Tensor:
     padded_x = [_pad_to_max(x_i, max_len, pad) for x_i in x]
     return torch.tensor(padded_x, dtype=dtype, device=device)
