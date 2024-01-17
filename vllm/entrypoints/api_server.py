@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
+from vllm.lora.request import LoRARequest
 from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
 
@@ -37,6 +38,11 @@ async def generate(request: Request) -> Response:
     sampling_params = SamplingParams(**request_dict)
     request_id = random_uuid()
 
+    # lora
+    lora_id = request_dict.pop("lora_id")
+    lora_path = request_dict.pop("lora_path")
+    lora_request = LoRARequest(lora_id=lora_id, lora_int_id=0, lora_local_path=lora_path)
+
     # jimpang add
     prompt_token_ids = None
     if prompt and len(prompt) > 0:
@@ -46,7 +52,8 @@ async def generate(request: Request) -> Response:
             prompt = None
 
     results_generator = engine.generate(
-        prompt=prompt, sampling_params=sampling_params, request_id=request_id, prompt_token_ids=prompt_token_ids)
+        prompt=prompt, sampling_params=sampling_params, request_id=request_id, prompt_token_ids=prompt_token_ids,
+        lora_request=lora_request)
 
     # Streaming case
     async def stream_results() -> AsyncGenerator[bytes, None]:
