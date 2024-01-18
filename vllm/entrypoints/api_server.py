@@ -2,12 +2,13 @@ import argparse
 import json
 from typing import AsyncGenerator
 
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-import uvicorn
 
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
+from vllm.lora.request import LoRARequest
 from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
 
@@ -37,16 +38,30 @@ async def generate(request: Request) -> Response:
     sampling_params = SamplingParams(**request_dict)
     request_id = random_uuid()
 
-    results_generator = engine.generate(prompt, sampling_params, request_id)
+    # lora
+    lora_id = request_dict.pop("lora_id")
+    lora_path = request_dict.pop("lora_path")
+    lora_request = LoRARequest(lora_id=lora_id, lora_int_id=0, lora_local_path=lora_path)
+    # jimpang add
+    prompt_token_ids = None
+    if prompt and len(prompt) > 0:
+        first_element = prompt[0]
+        if isinstance(first_element, int):
+            prompt_token_ids = prompt
+            prompt = None
+
+    results_generator = engine.generate(
+        prompt=prompt, sampling_params=sampling_params, request_id=request_id, prompt_token_ids=prompt_token_ids,
+        lora_request=lora_request)
 
     # Streaming case
     async def stream_results() -> AsyncGenerator[bytes, None]:
         async for request_output in results_generator:
-            prompt = request_output.prompt
             text_outputs = [
-                prompt + output.text for output in request_output.outputs
+                output.text for output in request_output.outputs
             ]
-            ret = {"text": text_outputs}
+            output_tokens = [output.token_ids for output in request_output.outputs]
+            ret = {"text": text_outputs, "output_token_ids": output_tokens}
             yield (json.dumps(ret) + "\0").encode("utf-8")
 
     if stream:
@@ -62,9 +77,9 @@ async def generate(request: Request) -> Response:
         final_output = request_output
 
     assert final_output is not None
-    prompt = final_output.prompt
-    text_outputs = [prompt + output.text for output in final_output.outputs]
-    ret = {"text": text_outputs}
+    text_outputs = [output.text for output in final_output.outputs]
+    output_tokens = [output.token_ids for output in final_output.outputs]
+    ret = {"text": text_outputs, "output_token_ids": output_tokens}
     return JSONResponse(ret)
 
 
