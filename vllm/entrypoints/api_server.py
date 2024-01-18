@@ -35,13 +35,17 @@ async def generate(request: Request) -> Response:
     request_dict = await request.json()
     prompt = request_dict.pop("prompt")
     stream = request_dict.pop("stream", False)
+    # lora
+    lora_id = request_dict.pop("lora_id", None)
+    lora_path = request_dict.pop("lora_path", None)
+    if lora_id is None or lora_path is None:
+        lora_request = None
+    else:
+        lora_request = LoRARequest(lora_id=lora_id, lora_int_id=0, lora_local_path=lora_path)
+
     sampling_params = SamplingParams(**request_dict)
     request_id = random_uuid()
 
-    # lora
-    lora_id = request_dict.pop("lora_id")
-    lora_path = request_dict.pop("lora_path")
-    lora_request = LoRARequest(lora_id=lora_id, lora_int_id=0, lora_local_path=lora_path)
     # jimpang add
     prompt_token_ids = None
     if prompt and len(prompt) > 0:
