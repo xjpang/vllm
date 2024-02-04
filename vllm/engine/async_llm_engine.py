@@ -1,15 +1,14 @@
 import asyncio
 import time
 from functools import partial
-from typing import (Any, Dict, Iterable, List, Optional, Set, Tuple, Type,
-                    Union, AsyncIterator)
+from typing import (Any, AsyncIterator, Dict, Iterable, List, Optional, Set, Tuple, Type, Union)
 
-from vllm.lora.request import LoRARequest
 from vllm.config import ModelConfig
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.llm_engine import LLMEngine
 from vllm.engine.ray_utils import initialize_cluster, ray
 from vllm.logger import init_logger
+from vllm.lora.request import LoRARequest
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 
@@ -77,7 +76,7 @@ class RequestTracker:
         self._request_streams: Dict[str, AsyncStream] = {}
         self._finished_requests: asyncio.Queue[str] = asyncio.Queue()
         self._new_requests: asyncio.Queue[Tuple[AsyncStream,
-                                                dict]] = asyncio.Queue()
+        dict]] = asyncio.Queue()
         self.new_requests_event = None
 
     def __contains__(self, item):
@@ -135,7 +134,7 @@ class RequestTracker:
         self._finished_requests.put_nowait(request_id)
 
         if request_id not in self._request_streams or self._request_streams[
-                request_id].finished:
+            request_id].finished:
             # The request has already finished or been aborted.
             return
 
@@ -203,11 +202,11 @@ class _AsyncLLMEngine(LLMEngine):
         return self._process_model_outputs(output, scheduler_outputs)
 
     async def encode_request_async(
-        self,
-        request_id: str,  # pylint: disable=unused-argument
-        prompt: Optional[str],
-        prompt_token_ids: Optional[List[int]] = None,
-        lora_request: Optional[LoRARequest] = None,
+            self,
+            request_id: str,  # pylint: disable=unused-argument
+            prompt: Optional[str],
+            prompt_token_ids: Optional[List[int]] = None,
+            lora_request: Optional[LoRARequest] = None,
     ):
         if prompt_token_ids is None:
             assert prompt is not None
@@ -218,14 +217,14 @@ class _AsyncLLMEngine(LLMEngine):
         return prompt_token_ids
 
     async def add_request_async(
-        self,
-        request_id: str,
-        prompt: Optional[str],
-        sampling_params: SamplingParams,
-        prompt_token_ids: Optional[List[int]] = None,
-        arrival_time: Optional[float] = None,
-        lora_request: Optional[LoRARequest] = None,
-        prefix_pos: Optional[int] = None,
+            self,
+            request_id: str,
+            prompt: Optional[str],
+            sampling_params: SamplingParams,
+            prompt_token_ids: Optional[List[int]] = None,
+            arrival_time: Optional[float] = None,
+            lora_request: Optional[LoRARequest] = None,
+            prefix_pos: Optional[int] = None,
     ) -> None:
         if lora_request is not None and not self.lora_config:
             raise ValueError(f"Got lora_request {lora_request} but LoRA is "
@@ -249,12 +248,12 @@ class _AsyncLLMEngine(LLMEngine):
         )
 
     async def _run_workers_async(
-        self,
-        method: str,
-        *args,
-        driver_args: Optional[List[Any]] = None,
-        driver_kwargs: Optional[Dict[str, Any]] = None,
-        **kwargs,
+            self,
+            method: str,
+            *args,
+            driver_args: Optional[List[Any]] = None,
+            driver_kwargs: Optional[Dict[str, Any]] = None,
+            **kwargs,
     ) -> Any:
         """Runs the given method on all workers."""
         coros = []
@@ -317,6 +316,9 @@ class AsyncLLMEngine:
         self.log_requests = log_requests
         self.max_log_len = max_log_len
         self.engine = self._init_engine(*args, **kwargs)
+        # jimpang: for lora
+        self.lora_names_map = {}
+        self.last_lora_id = 1
 
         self.background_loop = None
         # We need to keep a reference to unshielded
@@ -410,14 +412,14 @@ class AsyncLLMEngine:
             await asyncio.sleep(0)
 
     async def add_request(
-        self,
-        request_id: str,
-        prompt: Optional[str],
-        sampling_params: SamplingParams,
-        prompt_token_ids: Optional[List[int]] = None,
-        arrival_time: Optional[float] = None,
-        lora_request: Optional[LoRARequest] = None,
-        prefix_pos: Optional[int] = None,
+            self,
+            request_id: str,
+            prompt: Optional[str],
+            sampling_params: SamplingParams,
+            prompt_token_ids: Optional[List[int]] = None,
+            arrival_time: Optional[float] = None,
+            lora_request: Optional[LoRARequest] = None,
+            prefix_pos: Optional[int] = None,
     ) -> AsyncStream:
         if self.log_requests:
             shortened_prompt = prompt
@@ -427,7 +429,7 @@ class AsyncLLMEngine:
                     shortened_prompt = shortened_prompt[:self.max_log_len]
                 if shortened_token_ids is not None:
                     shortened_token_ids = shortened_token_ids[:self.
-                                                              max_log_len]
+                    max_log_len]
             logger.info(f"Received request {request_id}: "
                         f"prompt: {shortened_prompt!r}, "
                         f"prefix_pos: {prefix_pos},"
@@ -473,13 +475,13 @@ class AsyncLLMEngine:
         return stream
 
     async def generate(
-        self,
-        prompt: Optional[str],
-        sampling_params: SamplingParams,
-        request_id: str,
-        prompt_token_ids: Optional[List[int]] = None,
-        lora_request: Optional[LoRARequest] = None,
-        prefix_pos: Optional[int] = None,
+            self,
+            prompt: Optional[str],
+            sampling_params: SamplingParams,
+            request_id: str,
+            prompt_token_ids: Optional[List[int]] = None,
+            lora_request: Optional[LoRARequest] = None,
+            prefix_pos: Optional[int] = None,
     ) -> AsyncIterator[RequestOutput]:
         """Generate outputs for a request.
 
@@ -551,6 +553,15 @@ class AsyncLLMEngine:
         # Preprocess the request.
         # This should not be used for logging, as it is monotonic time.
         arrival_time = time.monotonic()
+
+        # jimpang: process lora id
+        if lora_request:
+            if lora_request.lora_name in self.lora_names_map:
+                lora_request.lora_int_id = self.lora_names_map[lora_request.lora_name]
+            else:
+                self.last_lora_id = self.last_lora_id + 1
+                lora_request.lora_int_id = self.last_lora_id
+                self.lora_names_map[lora_request.lora_name] = lora_request.lora_int_id
 
         try:
             stream = await self.add_request(
