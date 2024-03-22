@@ -21,11 +21,6 @@ class LoRARequest:
     lora_local_path: str
     long_lora_max_len: Optional[int] = None
 
-    def __post_init__(self):
-        if self.lora_int_id < 1:
-            raise ValueError(
-                f"lora_int_id must be > 0, got {self.lora_int_id}")
-
     def __eq__(self, value: object) -> bool:
         return isinstance(
             value, LoRARequest) and self.lora_int_id == value.lora_int_id
