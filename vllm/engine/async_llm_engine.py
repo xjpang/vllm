@@ -322,6 +322,9 @@ class AsyncLLMEngine:
         self.log_requests = log_requests
         self.max_log_len = max_log_len
         self.engine = self._init_engine(*args, **kwargs)
+        # jimpang: for lora
+        self.lora_names_map = {}
+        self.last_lora_id = 1
 
         self.background_loop: Optional[asyncio.Future] = None
         # We need to keep a reference to unshielded
@@ -645,6 +648,15 @@ class AsyncLLMEngine:
         """
         # Preprocess the request.
         arrival_time = time.time()
+
+        # jimpang: process lora id
+        if lora_request:
+            if lora_request.lora_name in self.lora_names_map:
+                lora_request.lora_int_id = self.lora_names_map[lora_request.lora_name]
+            else:
+                self.last_lora_id = self.last_lora_id + 1
+                lora_request.lora_int_id = self.last_lora_id
+                self.lora_names_map[lora_request.lora_name] = lora_request.lora_int_id
 
         try:
             stream = await self.add_request(
