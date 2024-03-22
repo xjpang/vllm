@@ -378,6 +378,9 @@ class AsyncLLMEngine:
         self.engine_use_ray = engine_use_ray
         self.log_requests = log_requests
         self.engine = self._init_engine(*args, **kwargs)
+        # jimpang: for lora
+        self.lora_names_map = {}
+        self.last_lora_id = 1
 
         self.background_loop: Optional[asyncio.Future] = None
         # We need to keep a reference to unshielded
@@ -869,6 +872,15 @@ class AsyncLLMEngine:
         """Common logic to process requests with SamplingParams or
         PoolingParams."""
         arrival_time = time.time()
+
+        # jimpang: process lora id
+        if lora_request:
+            if lora_request.lora_name in self.lora_names_map:
+                lora_request.lora_int_id = self.lora_names_map[lora_request.lora_name]
+            else:
+                self.last_lora_id = self.last_lora_id + 1
+                lora_request.lora_int_id = self.last_lora_id
+                self.lora_names_map[lora_request.lora_name] = lora_request.lora_int_id
 
         stream = await self.add_request(
             request_id,
