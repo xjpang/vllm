@@ -613,6 +613,9 @@ class AsyncLLMEngine:
         self.engine_use_ray = engine_use_ray
         self.log_requests = log_requests
         self.engine = self._init_engine(*args, **kwargs)
+        # jimpang: for lora
+        self.lora_names_map = {}
+        self.last_lora_id = 1
 
         # This ensures quick processing of request outputs
         # so the append to asyncio queues is not delayed,
