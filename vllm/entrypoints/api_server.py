@@ -82,7 +82,8 @@ async def generate(request: Request) -> Response:
                 output.text for output in request_output.outputs
             ]
             output_tokens = [output.token_ids for output in request_output.outputs]
-            ret = {"text": text_outputs, "output_token_ids": output_tokens}
+            logprobs = [output.logprobs for output in request_output.outputs]
+            ret = {"text": text_outputs, "output_token_ids": output_tokens, "logprobs": logprobs}
             yield (json.dumps(ret) + "\0").encode("utf-8")
 
     if stream:
@@ -99,7 +100,8 @@ async def generate(request: Request) -> Response:
     assert final_output is not None
     text_outputs = [output.text for output in final_output.outputs]
     output_tokens = [output.token_ids for output in final_output.outputs]
-    ret = {"text": text_outputs, "output_token_ids": output_tokens}
+    logprobs = [output.logprobs for output in final_output.outputs]
+    ret = {"text": text_outputs, "output_token_ids": output_tokens, "logprobs": logprobs}
     return JSONResponse(ret)
 
 
