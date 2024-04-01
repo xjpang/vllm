@@ -8,6 +8,8 @@ change `vllm/entrypoints/openai/api_server.py` instead.
 import asyncio
 import json
 import ssl
+from dataclasses import asdict
+from typing import AsyncGenerator
 from argparse import Namespace
 from typing import Any, AsyncGenerator, Optional
 
@@ -82,7 +84,8 @@ async def generate(request: Request) -> Response:
                 output.text for output in request_output.outputs
             ]
             output_tokens = [output.token_ids for output in request_output.outputs]
-            logprobs = [output.logprobs for output in request_output.outputs]
+            logprobs = [[{k: asdict(v) for k, v in logprobs.items()} for logprobs in
+                         output.logprobs] if output.logprobs is not None else None for output in request_output.outputs]
             ret = {"text": text_outputs, "output_token_ids": output_tokens, "logprobs": logprobs}
             yield (json.dumps(ret) + "\0").encode("utf-8")
 
@@ -100,7 +103,8 @@ async def generate(request: Request) -> Response:
     assert final_output is not None
     text_outputs = [output.text for output in final_output.outputs]
     output_tokens = [output.token_ids for output in final_output.outputs]
-    logprobs = [output.logprobs for output in final_output.outputs]
+    logprobs = [[{k: asdict(v) for k, v in logprobs.items()} for logprobs in
+                 output.logprobs] if output.logprobs is not None else None for output in final_output.outputs]
     ret = {"text": text_outputs, "output_token_ids": output_tokens, "logprobs": logprobs}
     return JSONResponse(ret)
 
