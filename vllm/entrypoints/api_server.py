@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.logger import init_logger
+from vllm.inputs import TokensPrompt
 from vllm.lora.request import LoRARequest
 from vllm.sampling_params import SamplingParams
 from vllm.usage.usage_lib import UsageContext
@@ -60,15 +61,14 @@ async def generate(request: Request) -> Response:
 
     assert engine is not None
     # jimpang add
-    prompt_token_ids = None
+    inputs = prompt
     if prompt and len(prompt) > 0:
         first_element = prompt[0]
         if isinstance(first_element, int):
-            prompt_token_ids = prompt
-            prompt = None
+            inputs = TokensPrompt(prompt_token_ids=prompt)
 
     results_generator = engine.generate(
-        prompt=prompt, sampling_params=sampling_params, request_id=request_id, prompt_token_ids=prompt_token_ids,
+        inputs=inputs, sampling_params=sampling_params, request_id=request_id,
         lora_request=lora_request)
 
     # Streaming case
