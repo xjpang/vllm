@@ -11,6 +11,7 @@ import asyncio
 import json
 import ssl
 from argparse import Namespace
+from dataclasses import asdict
 from collections.abc import AsyncGenerator
 from typing import Any, Optional
 
@@ -21,6 +22,7 @@ import vllm.envs as envs
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.entrypoints.launcher import serve_http
+from vllm.inputs import TokensPrompt
 from vllm.entrypoints.utils import with_cancellation
 from vllm.logger import init_logger
 from vllm.sampling_params import SamplingParams
@@ -57,21 +59,33 @@ async def generate(request: Request) -> Response:
 async def _generate(request_dict: dict, raw_request: Request) -> Response:
     prompt = request_dict.pop("prompt")
     stream = request_dict.pop("stream", False)
+    # jimpang lora
+    lora_id = request_dict.pop("lora_id", None)
+    lora_path = request_dict.pop("lora_path", None)
     sampling_params = SamplingParams(**request_dict)
     request_id = random_uuid()
 
     assert engine is not None
-    results_generator = engine.generate(prompt, sampling_params, request_id)
+    # jimpang add
+    inputs = prompt
+    if prompt and len(prompt) > 0:
+        first_element = prompt[0]
+        if isinstance(first_element, int):
+            inputs = TokensPrompt(prompt_token_ids=prompt)
+
+    results_generator = engine.generate(
+        prompt=inputs, sampling_params=sampling_params, request_id=request_id)
 
     # Streaming case
     async def stream_results() -> AsyncGenerator[bytes, None]:
         async for request_output in results_generator:
-            prompt = request_output.prompt
-            assert prompt is not None
             text_outputs = [
-                prompt + output.text for output in request_output.outputs
+                output.text for output in request_output.outputs
             ]
-            ret = {"text": text_outputs}
+            output_tokens = [list(output.token_ids) for output in request_output.outputs]
+            logprobs = [[{k: asdict(v) for k, v in logprobs.items()} for logprobs in
+                         output.logprobs] if output.logprobs is not None else None for output in request_output.outputs]
+            ret = {"text": text_outputs, "output_token_ids": output_tokens, "logprobs": logprobs}
             yield (json.dumps(ret) + "\n").encode("utf-8")
 
     if stream:
@@ -86,10 +100,11 @@ async def _generate(request_dict: dict, raw_request: Request) -> Response:
         return Response(status_code=499)
 
     assert final_output is not None
-    prompt = final_output.prompt
-    assert prompt is not None
-    text_outputs = [prompt + output.text for output in final_output.outputs]
-    ret = {"text": text_outputs}
+    text_outputs = [output.text for output in final_output.outputs]
+    output_tokens = [output.token_ids for output in final_output.outputs]
+    logprobs = [[{k: asdict(v) for k, v in logprobs.items()} for logprobs in
+                 output.logprobs] if output.logprobs is not None else None for output in final_output.outputs]
+    ret = {"text": text_outputs, "output_token_ids": output_tokens, "logprobs": logprobs}
     return JSONResponse(ret)
 
 
@@ -101,8 +116,8 @@ def build_app(args: Namespace) -> FastAPI:
 
 
 async def init_app(
-    args: Namespace,
-    llm_engine: Optional[AsyncLLMEngine] = None,
+        args: Namespace,
+        llm_engine: Optional[AsyncLLMEngine] = None,
 ) -> FastAPI:
     app = build_app(args)
 
@@ -146,33 +161,37 @@ async def run_server(args: Namespace,
 
 
 if __name__ == "__main__":
-    parser = FlexibleArgumentParser()
-    parser.add_argument("--host", type=str, default=None)
-    parser.add_argument("--port", type=parser.check_port, default=8000)
-    parser.add_argument("--ssl-keyfile", type=str, default=None)
-    parser.add_argument("--ssl-certfile", type=str, default=None)
-    parser.add_argument("--ssl-ca-certs",
-                        type=str,
-                        default=None,
-                        help="The CA certificates file")
-    parser.add_argument(
-        "--enable-ssl-refresh",
-        action="store_true",
-        default=False,
-        help="Refresh SSL Context when SSL certificate files change")
-    parser.add_argument(
-        "--ssl-cert-reqs",
-        type=int,
-        default=int(ssl.CERT_NONE),
-        help="Whether client certificate is required (see stdlib ssl module's)"
-    )
-    parser.add_argument(
-        "--root-path",
-        type=str,
-        default=None,
-        help="FastAPI root_path when app is behind a path based routing proxy")
-    parser.add_argument("--log-level", type=str, default="debug")
-    parser = AsyncEngineArgs.add_cli_args(parser)
-    args = parser.parse_args()
+    try:
+        parser = FlexibleArgumentParser()
+        parser.add_argument("--host", type=str, default=None)
+        parser.add_argument("--port", type=parser.check_port, default=8000)
+        parser.add_argument("--ssl-keyfile", type=str, default=None)
+        parser.add_argument("--ssl-certfile", type=str, default=None)
+        parser.add_argument("--ssl-ca-certs",
+                            type=str,
+                            default=None,
+                            help="The CA certificates file")
+        parser.add_argument(
+            "--enable-ssl-refresh",
+            action="store_true",
+            default=False,
+            help="Refresh SSL Context when SSL certificate files change")
+        parser.add_argument(
+            "--ssl-cert-reqs",
+            type=int,
+            default=int(ssl.CERT_NONE),
+            help="Whether client certificate is required (see stdlib ssl module's)"
+        )
+        parser.add_argument(
+            "--root-path",
+            type=str,
+            default=None,
+            help="FastAPI root_path when app is behind a path based routing proxy")
+        parser.add_argument("--log-level", type=str, default="debug")
+        parser = AsyncEngineArgs.add_cli_args(parser)
+        args = parser.parse_args()
 
-    asyncio.run(run_server(args))
+        asyncio.run(run_server(args))
+    except Exception as e:
+        logger.error(str(e))
+        raise
