@@ -76,6 +76,7 @@ _TEXT_GENERATION_MODELS = {
     "GraniteMoeForCausalLM": ("granitemoe", "GraniteMoeForCausalLM"),
     "GraniteMoeHybridForCausalLM": ("granitemoehybrid", "GraniteMoeHybridForCausalLM"),   # noqa: E501
     "GraniteMoeSharedForCausalLM": ("granitemoeshared", "GraniteMoeSharedForCausalLM"),   # noqa: E501
+    "HunYuanForCausalLM": ("hunyuan", "HunYuanForCausalLM"),
     "GritLM": ("gritlm", "GritLM"),
     "Grok1ModelForCausalLM": ("grok1", "Grok1ForCausalLM"),
     "HunYuanMoEV1ForCausalLM": ("hunyuan_v1_moe", "HunYuanMoEV1ForCausalLM"),
