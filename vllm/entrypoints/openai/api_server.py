@@ -81,7 +81,6 @@ def model_is_embedding(model_name: str, trust_remote_code: bool,
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
     async def _force_log():
         while True:
             await asyncio.sleep(10)
@@ -98,7 +97,6 @@ async def lifespan(app: FastAPI):
 @asynccontextmanager
 async def build_async_engine_client(
         args: Namespace) -> AsyncIterator[Optional[AsyncEngineClient]]:
-
     # Context manager to handle async_engine_client lifecycle
     # Ensures everything is shutdown and cleaned up on error/exit
     global engine_args
@@ -109,15 +107,14 @@ async def build_async_engine_client(
 
     async with build_async_engine_client_from_engine_args(
             engine_args, args.disable_frontend_multiprocessing) as engine:
-
         async_engine_client = engine  # type: ignore[assignment]
         yield engine
 
 
 @asynccontextmanager
 async def build_async_engine_client_from_engine_args(
-    engine_args: AsyncEngineArgs,
-    disable_frontend_multiprocessing: bool = False,
+        engine_args: AsyncEngineArgs,
+        disable_frontend_multiprocessing: bool = False,
 ) -> AsyncIterator[Optional[AsyncEngineClient]]:
     """
     Create AsyncEngineClient, either:
@@ -285,7 +282,6 @@ async def show_version():
 @router.post("/v1/chat/completions")
 async def create_chat_completion(request: ChatCompletionRequest,
                                  raw_request: Request):
-
     generator = await openai_serving_chat.create_chat_completion(
         request, raw_request)
 
@@ -330,12 +326,14 @@ if envs.VLLM_TORCH_PROFILER_DIR:
         "Torch Profiler is enabled in the API server. This should ONLY be "
         "used for local development!")
 
+
     @router.post("/start_profile")
     async def start_profile():
         logger.info("Starting profiler...")
         await async_engine_client.start_profile()
         logger.info("Profiler started.")
         return Response(status_code=200)
+
 
     @router.post("/stop_profile")
     async def stop_profile():
@@ -429,8 +427,8 @@ def build_app(args: Namespace) -> FastAPI:
 
 
 async def init_app(
-    async_engine_client: AsyncEngineClient,
-    args: Namespace,
+        async_engine_client: AsyncEngineClient,
+        args: Namespace,
 ) -> FastAPI:
     app = build_app(args)
 
@@ -521,11 +519,15 @@ async def run_server(args, **uvicorn_kwargs) -> None:
 
 
 if __name__ == "__main__":
-    # NOTE(simon):
-    # This section should be in sync with vllm/scripts.py for CLI entrypoints.
-    parser = FlexibleArgumentParser(
-        description="vLLM OpenAI-Compatible RESTful API server.")
-    parser = make_arg_parser(parser)
-    args = parser.parse_args()
+    try:
+        # NOTE(simon):
+        # This section should be in sync with vllm/scripts.py for CLI entrypoints.
+        parser = FlexibleArgumentParser(
+            description="vLLM OpenAI-Compatible RESTful API server.")
+        parser = make_arg_parser(parser)
+        args = parser.parse_args()
 
-    asyncio.run(run_server(args))
+        asyncio.run(run_server(args))
+    except Exception as e:
+        logger.error(str(e))
+        raise
