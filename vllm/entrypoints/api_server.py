@@ -51,6 +51,9 @@ async def generate(request: Request) -> Response:
     request_dict = await request.json()
     prompt = request_dict.pop("prompt")
     stream = request_dict.pop("stream", False)
+    # jimpang lora
+    lora_id = request_dict.pop("lora_id", None)
+    lora_path = request_dict.pop("lora_path", None)
     sampling_params = SamplingParams(**request_dict)
     request_id = random_uuid()
 
