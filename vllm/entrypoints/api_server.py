@@ -107,7 +107,7 @@ def build_stream_response(request_output: RequestOutput, stream: bool) -> ChatRe
     return resp
 
 
-@app.post("v1/chat")
+@app.post("/v1/chat")
 async def chat(request: Request) -> Response:
     """Generate completion for the request.
 
