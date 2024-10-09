@@ -9,6 +9,8 @@ import asyncio
 import json
 import ssl
 from argparse import Namespace
+from dataclasses import asdict
+from datetime import datetime
 from typing import Any, AsyncGenerator, Optional
 
 from fastapi import FastAPI, Request
@@ -18,11 +20,13 @@ from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.entrypoints.launcher import serve_http
 from vllm.logger import init_logger
+from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.usage.usage_lib import UsageContext
 from vllm.utils import (FlexibleArgumentParser, iterate_with_cancellation,
                         random_uuid)
 from vllm.version import __version__ as VLLM_VERSION
+from .venus_protocol import ChatResponse, Message, StreamChoice, Usage
 
 logger = init_logger("vllm.entrypoints.api_server")
 
@@ -87,6 +91,71 @@ async def generate(request: Request) -> Response:
     return JSONResponse(ret)
 
 
+def build_stream_response(request_output: RequestOutput, stream: bool) -> ChatResponse:
+    resp = ChatResponse(choices=[])
+    prompt_token_len = len(request_output.prompt_token_ids)
+    completion_tokens_len = 0
+    for index, output in enumerate(request_output.outputs):
+        message = Message(role="assistant", content=output.text)
+
+        choice = StreamChoice(index=index, delta=message)
+        resp.choices.append(choice)
+        completion_tokens_len = completion_tokens_len + len(output.token_ids)
+    resp.usage = Usage(prompt_tokens=prompt_token_len, completion_tokens=completion_tokens_len,
+                       total_tokens=prompt_token_len + completion_tokens_len)
+
+    return resp
+
+
+@app.post("v1/chat")
+async def chat(request: Request) -> Response:
+    """Generate completion for the request.
+
+    The request should be a JSON object with the following fields:
+    - prompt: the prompt to use for the generation.
+    - stream: whether to stream the results or not.
+    - other fields: the sampling parameters (See `SamplingParams` for details).
+    """
+    created_time = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+
+    request_dict = await request.json()
+    prompt = request_dict.pop("prompt")
+    stream = request_dict.pop("stream", False)
+    sampling_params = SamplingParams(**request_dict)
+    request_id = random_uuid()
+
+    assert engine is not None
+    results_generator = engine.generate(prompt, sampling_params, request_id)
+    results_generator = iterate_with_cancellation(
+        results_generator, is_cancelled=request.is_disconnected)
+
+    # Streaming case
+    async def stream_results() -> AsyncGenerator[bytes, None]:
+        async for request_output in results_generator:
+            ret = build_stream_response(request_output, stream)
+            ret.code = 0
+            ret.error_message = ""
+            ret.created = created_time
+            ret.id = request_id
+            yield (json.dumps(asdict(ret)) + "\0").encode("utf-8")
+
+    if stream:
+        return StreamingResponse(stream_results())
+
+    # Non-streaming case
+    final_output = None
+    try:
+        async for request_output in results_generator:
+            final_output = request_output
+    except asyncio.CancelledError:
+        resp = ChatResponse(code=-1, error_message="internal error.")
+        return JSONResponse(asdict(resp))
+
+    assert final_output is not None
+    ret = build_stream_response(final_output, stream)
+    return JSONResponse(asdict(ret))
+
+
 def build_app(args: Namespace) -> FastAPI:
     global app
 
@@ -95,8 +164,8 @@ def build_app(args: Namespace) -> FastAPI:
 
 
 async def init_app(
-    args: Namespace,
-    llm_engine: Optional[AsyncLLMEngine] = None,
+        args: Namespace,
+        llm_engine: Optional[AsyncLLMEngine] = None,
 ) -> FastAPI:
     app = build_app(args)
 
@@ -105,7 +174,7 @@ async def init_app(
     engine_args = AsyncEngineArgs.from_cli_args(args)
     engine = (llm_engine
               if llm_engine is not None else AsyncLLMEngine.from_engine_args(
-                  engine_args, usage_context=UsageContext.API_SERVER))
+        engine_args, usage_context=UsageContext.API_SERVER))
 
     return app
 
