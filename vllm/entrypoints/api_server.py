@@ -121,7 +121,30 @@ async def chat(request: Request) -> Response:
     request_dict = await request.json()
     prompt = request_dict.pop("prompt")
     stream = request_dict.pop("stream", False)
+
+    num_beams = request_dict.pop("num_beams", 1)
+    max_new_tokens = request_dict.pop("max_new_tokens", 2048)
+    _ = request_dict.pop("max_length", 2048)
+    do_sample = request_dict.pop("do_sample", True)
+    num_return_sequences = request_dict.pop("num_return_sequences", 1)
+
     sampling_params = SamplingParams(**request_dict)
+    
+    if num_beams > 1:
+        sampling_params.use_beam_search = True
+        sampling_params.best_of = num_beams
+
+    if not do_sample:
+        sampling_params.temperature = 0
+
+    if sampling_params.temperature == 0:
+        sampling_params.best_of = 1
+        sampling_params.top_p = 1
+        sampling_params.top_k = -1
+
+    sampling_params.max_tokens = max_new_tokens
+    sampling_params.n = num_return_sequences
+
     request_id = random_uuid()
 
     assert engine is not None
