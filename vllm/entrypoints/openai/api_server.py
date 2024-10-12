@@ -97,7 +97,6 @@ async def lifespan(app: FastAPI):
 @asynccontextmanager
 async def build_async_engine_client(
         args: Namespace) -> AsyncIterator[EngineClient]:
-
     # Context manager to handle engine_client lifecycle
     # Ensures everything is shutdown and cleaned up on error/exit
     engine_args = AsyncEngineArgs.from_cli_args(args)
@@ -109,8 +108,8 @@ async def build_async_engine_client(
 
 @asynccontextmanager
 async def build_async_engine_client_from_engine_args(
-    engine_args: AsyncEngineArgs,
-    disable_frontend_multiprocessing: bool = False,
+        engine_args: AsyncEngineArgs,
+        disable_frontend_multiprocessing: bool = False,
 ) -> AsyncIterator[EngineClient]:
     """
     Create EngineClient, either:
@@ -306,10 +305,9 @@ async def show_version():
     return JSONResponse(content=ver)
 
 
-@router.post("/v1/chat/completions")
+@router.post("/v1/chat")
 async def create_chat_completion(request: ChatCompletionRequest,
                                  raw_request: Request):
-
     generator = await chat(raw_request).create_chat_completion(
         request, raw_request)
 
@@ -354,12 +352,14 @@ if envs.VLLM_TORCH_PROFILER_DIR:
         "Torch Profiler is enabled in the API server. This should ONLY be "
         "used for local development!")
 
+
     @router.post("/start_profile")
     async def start_profile(raw_request: Request):
         logger.info("Starting profiler...")
         await engine_client(raw_request).start_profile()
         logger.info("Profiler started.")
         return Response(status_code=200)
+
 
     @router.post("/stop_profile")
     async def stop_profile(raw_request: Request):
@@ -368,11 +368,11 @@ if envs.VLLM_TORCH_PROFILER_DIR:
         logger.info("Profiler stopped.")
         return Response(status_code=200)
 
-
 if envs.VLLM_ALLOW_RUNTIME_LORA_UPDATING:
     logger.warning(
         "Lora dynamic loading & unloading is enabled in the API server. "
         "This should ONLY be used for local development!")
+
 
     @router.post("/v1/load_lora_adapter")
     async def load_lora_adapter(request: LoadLoraAdapterRequest,
@@ -388,6 +388,7 @@ if envs.VLLM_ALLOW_RUNTIME_LORA_UPDATING:
                                 status_code=response.code)
 
         return Response(status_code=200, content=response)
+
 
     @router.post("/v1/unload_lora_adapter")
     async def unload_lora_adapter(request: UnloadLoraAdapterRequest,
@@ -462,10 +463,10 @@ def build_app(args: Namespace) -> FastAPI:
 
 
 def init_app_state(
-    engine_client: EngineClient,
-    model_config: ModelConfig,
-    state: State,
-    args: Namespace,
+        engine_client: EngineClient,
+        model_config: ModelConfig,
+        state: State,
+        args: Namespace,
 ) -> None:
     if args.served_model_name is not None:
         served_model_names = args.served_model_name

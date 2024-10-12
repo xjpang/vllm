@@ -156,7 +156,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     # Ordered by official OpenAI API documentation
     # https://platform.openai.com/docs/api-reference/chat/create
     messages: List[ChatCompletionMessageParam]
-    model: str
+    model: Optional[str] = "default"
     frequency_penalty: Optional[float] = 0.0
     logit_bias: Optional[Dict[str, float]] = None
     logprobs: Optional[bool] = False
@@ -173,7 +173,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     top_p: Optional[float] = 1.0
     tools: Optional[List[ChatCompletionToolsParam]] = None
     tool_choice: Optional[Union[Literal["none"], Literal["auto"],
-                                ChatCompletionNamedToolChoiceParam]] = "none"
+    ChatCompletionNamedToolChoiceParam]] = "none"
 
     # NOTE this will be ignored by VLLM -- the model determines the behavior
     parallel_tool_calls: Optional[bool] = False
@@ -196,6 +196,12 @@ class ChatCompletionRequest(OpenAIBaseModel):
     truncate_prompt_tokens: Optional[Annotated[int, Field(ge=1)]] = None
     prompt_logprobs: Optional[int] = None
     # doc: end-chat-completion-sampling-params
+
+    # doc: begin-venus-params
+    max_new_tokens: Optional[int] = None
+    num_beams: Optional[int] = 1
+    do_sample: Optional[bool] = False
+    # doc: end-venus-params
 
     # doc: begin-chat-completion-extra-params
     echo: bool = Field(
@@ -279,9 +285,30 @@ class ChatCompletionRequest(OpenAIBaseModel):
             self, tokenizer: AnyTokenizer,
             guided_decode_logits_processor: Optional[LogitsProcessor],
             default_max_tokens: int) -> SamplingParams:
-        max_tokens = self.max_tokens
+
+        # doc: begin-venus-params
+        max_tokens = None
+        if self.max_tokens is not None:
+            max_tokens = self.max_tokens
+
+        if self.max_new_tokens is not None:
+            max_tokens = self.max_new_tokens
+
         if max_tokens is None:
             max_tokens = default_max_tokens
+
+        if self.num_beams > 1:
+            self.use_beam_search = True
+            self.best_of = self.num_beams
+
+        if not self.do_sample:
+            self.temperature = 0
+
+        if self.temperature == 0:
+            self.best_of = 1
+            self.top_p = 1
+            self.top_k = -1
+        # doc: end-venus-params
 
         prompt_logprobs = self.prompt_logprobs
         if prompt_logprobs is None and self.echo:
@@ -634,7 +661,7 @@ class CompletionLogProbs(OpenAIBaseModel):
     token_logprobs: List[Optional[float]] = Field(default_factory=list)
     tokens: List[str] = Field(default_factory=list)
     top_logprobs: List[Optional[Dict[str,
-                                     float]]] = Field(default_factory=list)
+    float]]] = Field(default_factory=list)
 
 
 class CompletionResponseChoice(OpenAIBaseModel):

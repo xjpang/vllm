@@ -1,4 +1,5 @@
 import asyncio
+import os
 import time
 from typing import (AsyncGenerator, AsyncIterator, Callable, Dict, List,
                     Optional)
@@ -45,15 +46,15 @@ TypeCreateLogProbsFn = Callable[
 class OpenAIServingCompletion(OpenAIServing):
 
     def __init__(
-        self,
-        engine_client: EngineClient,
-        model_config: ModelConfig,
-        base_model_paths: List[BaseModelPath],
-        *,
-        lora_modules: Optional[List[LoRAModulePath]],
-        prompt_adapters: Optional[List[PromptAdapterPath]],
-        request_logger: Optional[RequestLogger],
-        return_tokens_as_token_ids: bool = False,
+            self,
+            engine_client: EngineClient,
+            model_config: ModelConfig,
+            base_model_paths: List[BaseModelPath],
+            *,
+            lora_modules: Optional[List[LoRAModulePath]],
+            prompt_adapters: Optional[List[PromptAdapterPath]],
+            request_logger: Optional[RequestLogger],
+            return_tokens_as_token_ids: bool = False,
     ):
         super().__init__(engine_client=engine_client,
                          model_config=model_config,
@@ -64,9 +65,9 @@ class OpenAIServingCompletion(OpenAIServing):
                          return_tokens_as_token_ids=return_tokens_as_token_ids)
 
     async def create_completion(
-        self,
-        request: CompletionRequest,
-        raw_request: Request,
+            self,
+            request: CompletionRequest,
+            raw_request: Request,
     ) -> Union[AsyncGenerator[str, None], CompletionResponse, ErrorResponse]:
         """Completion API similar to OpenAI's API.
 
@@ -77,6 +78,11 @@ class OpenAIServingCompletion(OpenAIServing):
             - suffix (the language models we currently support do not support
             suffix)
         """
+
+        # begin-venus-add
+        request.model = os.environ.get("VLLM_MODEL_PATH", "")
+        # end-venus-add
+
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
             return error_check_ret
@@ -126,7 +132,7 @@ class OpenAIServingCompletion(OpenAIServing):
                     tokenizer,
                     guided_decode_logits_processor,
                     default_max_tokens=self.max_model_len -
-                    len(prompt_inputs["prompt_token_ids"]))
+                                       len(prompt_inputs["prompt_token_ids"]))
 
                 request_id_item = f"{request_id}-{i}"
 
@@ -228,15 +234,15 @@ class OpenAIServingCompletion(OpenAIServing):
         return response
 
     async def completion_stream_generator(
-        self,
-        request: CompletionRequest,
-        result_generator: AsyncIterator[Tuple[int, RequestOutput]],
-        request_id: str,
-        created_time: int,
-        model_name: str,
-        num_prompts: int,
-        tokenizer: AnyTokenizer,
-        request_metadata: RequestResponseMetadata,
+            self,
+            request: CompletionRequest,
+            result_generator: AsyncIterator[Tuple[int, RequestOutput]],
+            request_id: str,
+            created_time: int,
+            model_name: str,
+            num_prompts: int,
+            tokenizer: AnyTokenizer,
+            request_metadata: RequestResponseMetadata,
     ) -> AsyncGenerator[str, None]:
         num_choices = 1 if request.n is None else request.n
         previous_text_lens = [0] * num_choices * num_prompts
@@ -371,14 +377,14 @@ class OpenAIServingCompletion(OpenAIServing):
         yield "data: [DONE]\n\n"
 
     def request_output_to_completion_response(
-        self,
-        final_res_batch: List[RequestOutput],
-        request: CompletionRequest,
-        request_id: str,
-        created_time: int,
-        model_name: str,
-        tokenizer: AnyTokenizer,
-        request_metadata: RequestResponseMetadata,
+            self,
+            final_res_batch: List[RequestOutput],
+            request: CompletionRequest,
+            request_id: str,
+            created_time: int,
+            model_name: str,
+            tokenizer: AnyTokenizer,
+            request_metadata: RequestResponseMetadata,
     ) -> CompletionResponse:
         choices: List[CompletionResponseChoice] = []
         num_prompt_tokens = 0
@@ -392,7 +398,7 @@ class OpenAIServingCompletion(OpenAIServing):
 
             token_ids: GenericSequence[int]
             out_logprobs: Optional[GenericSequence[Optional[Dict[int,
-                                                                 Logprob]]]]
+            Logprob]]]]
 
             for output in final_res.outputs:
                 assert request.max_tokens is not None
@@ -463,12 +469,12 @@ class OpenAIServingCompletion(OpenAIServing):
         )
 
     def _create_completion_logprobs(
-        self,
-        token_ids: GenericSequence[int],
-        top_logprobs: GenericSequence[Optional[Dict[int, Logprob]]],
-        num_output_top_logprobs: int,
-        tokenizer: AnyTokenizer,
-        initial_text_offset: int = 0,
+            self,
+            token_ids: GenericSequence[int],
+            top_logprobs: GenericSequence[Optional[Dict[int, Logprob]]],
+            num_output_top_logprobs: int,
+            tokenizer: AnyTokenizer,
+            initial_text_offset: int = 0,
     ) -> CompletionLogProbs:
         """Create logprobs for OpenAI Completion API."""
         out_text_offset: List[int] = []
@@ -514,7 +520,7 @@ class OpenAIServingCompletion(OpenAIServing):
                         top_lp[0],
                         tokenizer,
                         return_as_token_id=self.return_tokens_as_token_ids):
-                    max(top_lp[1].logprob, -9999.0)
+                        max(top_lp[1].logprob, -9999.0)
                     for i, top_lp in enumerate(step_top_logprobs.items())
                     if num_output_top_logprobs >= i
                 })

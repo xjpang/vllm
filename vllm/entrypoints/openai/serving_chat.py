@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import time
 from typing import (AsyncGenerator, AsyncIterator, Callable, Dict, Final, List,
                     Optional)
@@ -90,11 +91,11 @@ class OpenAIServingChat(OpenAIServing):
                                 "--tool-call-parser")
 
     async def create_chat_completion(
-        self,
-        request: ChatCompletionRequest,
-        raw_request: Optional[Request] = None,
+            self,
+            request: ChatCompletionRequest,
+            raw_request: Optional[Request] = None,
     ) -> Union[AsyncGenerator[str, None], ChatCompletionResponse,
-               ErrorResponse]:
+    ErrorResponse]:
         """Completion API similar to OpenAI's API.
 
         See https://platform.openai.com/docs/api-reference/chat/create
@@ -102,6 +103,10 @@ class OpenAIServingChat(OpenAIServing):
         ChatCompletion API.
 
         """
+        # begin-venus-add
+        request.model = os.environ.get("VLLM_MODEL_PATH", "")
+        # end-venus-add
+
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
             logger.error("Error with model %s", error_check_ret)
@@ -206,7 +211,7 @@ class OpenAIServingChat(OpenAIServing):
                 tokenizer,
                 guided_decode_logits_processor,
                 default_max_tokens=self.max_model_len -
-                len(prompt_inputs["prompt_token_ids"]))
+                                   len(prompt_inputs["prompt_token_ids"]))
 
             self._log_inputs(request_id,
                              prompt_inputs,
@@ -264,13 +269,13 @@ class OpenAIServingChat(OpenAIServing):
         return request.messages[-1]["role"]
 
     async def chat_completion_stream_generator(
-        self,
-        request: ChatCompletionRequest,
-        result_generator: AsyncIterator[RequestOutput],
-        request_id: str,
-        conversation: List[ConversationMessage],
-        tokenizer: AnyTokenizer,
-        request_metadata: RequestResponseMetadata,
+            self,
+            request: ChatCompletionRequest,
+            result_generator: AsyncIterator[RequestOutput],
+            request_id: str,
+            conversation: List[ConversationMessage],
+            tokenizer: AnyTokenizer,
+            request_metadata: RequestResponseMetadata,
     ) -> AsyncGenerator[str, None]:
         model_name = self.base_model_paths[0].name
         created_time = int(time.time())
@@ -294,8 +299,8 @@ class OpenAIServingChat(OpenAIServing):
 
         # Determine whether tools are in use with "auto" tool choice
         tool_choice_auto = (
-            not tool_choice_function_name
-            and self._should_stream_with_auto_tool_parsing(request))
+                not tool_choice_function_name
+                and self._should_stream_with_auto_tool_parsing(request))
 
         all_previous_token_ids: Optional[List[List[int]]]
         if tool_choice_auto:
@@ -361,7 +366,7 @@ class OpenAIServingChat(OpenAIServing):
                     if request.echo:
                         last_msg_content: str = ""
                         if conversation and "content" in conversation[
-                                -1] and conversation[-1].get("role") == role:
+                            -1] and conversation[-1].get("role") == role:
                             last_msg_content = conversation[-1]["content"] or ""
 
                         if last_msg_content:
@@ -423,7 +428,7 @@ class OpenAIServingChat(OpenAIServing):
                             DeltaToolCall(function=DeltaFunctionCall(
                                 name=tool_choice_function_name,
                                 arguments=delta_text),
-                                          index=i)
+                                index=i)
                         ])
 
                     # handle streaming deltas for tools with "auto" tool choice
@@ -431,7 +436,7 @@ class OpenAIServingChat(OpenAIServing):
                         assert previous_texts is not None
                         assert all_previous_token_ids is not None
                         assert tool_parser is not None
-                        #TODO optimize manipulation of these lists
+                        # TODO optimize manipulation of these lists
                         previous_text = previous_texts[i]
                         previous_token_ids = all_previous_token_ids[i]
                         current_text = previous_text + delta_text
@@ -489,7 +494,7 @@ class OpenAIServingChat(OpenAIServing):
                                     prompt_tokens=num_prompt_tokens,
                                     completion_tokens=completion_tokens,
                                     total_tokens=num_prompt_tokens +
-                                    completion_tokens,
+                                                 completion_tokens,
                                 )
                                 chunk.usage = usage
                             else:
@@ -507,7 +512,7 @@ class OpenAIServingChat(OpenAIServing):
                         if tool_parser:
                             index = len(
                                 tool_parser.prev_tool_call_arr) - 1 if len(
-                                    tool_parser.prev_tool_call_arr) > 0 else 0
+                                tool_parser.prev_tool_call_arr) > 0 else 0
                         else:
                             index = 0
 
@@ -560,7 +565,7 @@ class OpenAIServingChat(OpenAIServing):
                                     prompt_tokens=num_prompt_tokens,
                                     completion_tokens=completion_tokens,
                                     total_tokens=num_prompt_tokens +
-                                    completion_tokens,
+                                                 completion_tokens,
                                 )
                                 chunk.usage = usage
                             else:
@@ -607,13 +612,13 @@ class OpenAIServingChat(OpenAIServing):
         yield "data: [DONE]\n\n"
 
     async def chat_completion_full_generator(
-        self,
-        request: ChatCompletionRequest,
-        result_generator: AsyncIterator[RequestOutput],
-        request_id: str,
-        conversation: List[ConversationMessage],
-        tokenizer: AnyTokenizer,
-        request_metadata: RequestResponseMetadata,
+            self,
+            request: ChatCompletionRequest,
+            result_generator: AsyncIterator[RequestOutput],
+            request_id: str,
+            conversation: List[ConversationMessage],
+            tokenizer: AnyTokenizer,
+            request_metadata: RequestResponseMetadata,
     ) -> Union[ErrorResponse, ChatCompletionResponse]:
 
         model_name = self.base_model_paths[0].name
@@ -652,9 +657,9 @@ class OpenAIServingChat(OpenAIServing):
             # if auto tools are not enabled, and a named tool choice using
             #   outlines is not being used
             if (not self.enable_auto_tools
-                    or not self.tool_parser) and not isinstance(
-                        request.tool_choice,
-                        ChatCompletionNamedToolChoiceParam):
+                or not self.tool_parser) and not isinstance(
+                request.tool_choice,
+                ChatCompletionNamedToolChoiceParam):
                 message = ChatMessage(role=role, content=output.text)
 
             # if the request uses tools and specified a tool choice
@@ -716,7 +721,7 @@ class OpenAIServingChat(OpenAIServing):
         if request.echo:
             last_msg_content = ""
             if conversation and "content" in conversation[-1] and conversation[
-                    -1].get("role") == role:
+                -1].get("role") == role:
                 last_msg_content = conversation[-1]["content"] or ""
 
             for choice in choices:
@@ -764,11 +769,11 @@ class OpenAIServingChat(OpenAIServing):
         ]
 
     def _create_chat_logprobs(
-        self,
-        token_ids: GenericSequence[int],
-        top_logprobs: GenericSequence[Optional[Dict[int, Logprob]]],
-        tokenizer: AnyTokenizer,
-        num_output_top_logprobs: Optional[int] = None,
+            self,
+            token_ids: GenericSequence[int],
+            top_logprobs: GenericSequence[Optional[Dict[int, Logprob]]],
+            tokenizer: AnyTokenizer,
+            num_output_top_logprobs: Optional[int] = None,
     ) -> ChatCompletionLogProbs:
         """Create OpenAI-style logprobs."""
         logprobs_content: List[ChatCompletionLogProbsContent] = []
@@ -823,9 +828,9 @@ class OpenAIServingChat(OpenAIServing):
                 and request.tool_choice in ['auto', None])
 
     def _should_check_for_unstreamed_tool_arg_tokens(
-        self,
-        delta_message: Optional[DeltaMessage],
-        output: CompletionOutput,
+            self,
+            delta_message: Optional[DeltaMessage],
+            output: CompletionOutput,
     ) -> bool:
         """
         Check to see if we should check for unstreamed tool arguments tokens.
