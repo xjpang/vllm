@@ -200,7 +200,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     # doc: begin-venus-params
     max_new_tokens: Optional[int] = None
     num_beams: Optional[int] = 1
-    do_sample: Optional[bool] = False
+    do_sample: Optional[bool] = True
     # doc: end-venus-params
 
     # doc: begin-chat-completion-extra-params
