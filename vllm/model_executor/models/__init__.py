@@ -63,6 +63,7 @@ _GENERATION_MODELS = {
     "EAGLEModel": ("eagle", "EAGLE"),
     "MLPSpeculatorPreTrainedModel": ("mlp_speculator", "MLPSpeculator"),
     "JambaForCausalLM": ("jamba", "JambaForCausalLM"),
+    "HunYuanForCausalLM": ("hunyuan", "HunYuanForCausalLM"),
 }
 
 _EMBEDDING_MODELS = {

@@ -49,6 +49,7 @@ _PP_SUPPORTED_MODELS = [
     "Qwen2ForCausalLM",
     "Qwen2MoeForCausalLM",
     "QWenLMHeadModel",
+    "HunYuanForCausalLM",
 ]
 
 
@@ -1652,6 +1653,11 @@ def _get_and_verify_max_len(
             if rope_type == "yarn":
                 derived_max_model_len = rope_scaling[
                     "original_max_position_embeddings"]
+
+            # see DynamicNTKAlphaRotaryEmbedding
+            if rope_scaling["type"] == "dynamic" and "alpha" in rope_scaling:
+                scaling_factor = 1
+
             derived_max_model_len *= scaling_factor
 
     # If the user specified a max length, make sure it is smaller than the
