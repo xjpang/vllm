@@ -66,7 +66,7 @@ async def generate(request: Request) -> Response:
             inputs = TokensPrompt(prompt_token_ids=prompt)
 
     results_generator = engine.generate(
-        inputs=inputs, sampling_params=sampling_params, request_id=request_id)
+        prompt=inputs, sampling_params=sampling_params, request_id=request_id)
     results_generator = iterate_with_cancellation(
         results_generator, is_cancelled=request.is_disconnected)
 
