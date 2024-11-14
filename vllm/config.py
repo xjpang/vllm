@@ -1954,6 +1954,11 @@ def _get_and_verify_max_len(
             if rope_type == "yarn":
                 derived_max_model_len = rope_scaling[
                     "original_max_position_embeddings"]
+
+            # see DynamicNTKAlphaRotaryEmbedding
+            if rope_scaling["type"] == "dynamic" and "alpha" in rope_scaling:
+                scaling_factor = 1
+
             derived_max_model_len *= scaling_factor
 
     if encoder_config and "max_seq_length" in encoder_config:
