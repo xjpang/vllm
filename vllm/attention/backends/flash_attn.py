@@ -625,7 +625,8 @@ def unified_flash_attention(
     assert isinstance(current_metadata, FlashAttentionMetadata)
     attn_metadata: FlashAttentionMetadata = current_metadata
 
-    num_tokens, hidden_size = query.shape
+    num_tokens = query.shape[0]
+    hidden_size = query.numel() // num_tokens
     # Reshape the query, key, and value tensors.
     query = query.view(-1, num_heads, head_size)
     key = key.view(-1, num_kv_heads, head_size)
