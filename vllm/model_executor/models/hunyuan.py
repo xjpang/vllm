@@ -663,12 +663,7 @@ class HunYuanForCausalLM(nn.Module, SupportsLoRA):
                 self.config.__class__.model_type):
             if not isinstance(self.model.layers[layer_idx], nn.Identity):
                 layer_self_attn = self.model.layers[layer_idx].self_attn
-            if is_hip():
-                # The scaling factor convention we are assuming is
-                # quantized_value * scaling_factor ~= true_value
-                # which is consistent with the practice of setting
-                # scaling_factor = tensor_amax / FPtype_max
-                scaling_factor *= 2
+
             if hasattr(layer_self_attn, "kv_scale"):
                 layer_self_attn.attn._kv_scale = scaling_factor
             else:
