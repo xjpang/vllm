@@ -124,6 +124,7 @@ class HunYuanSparseMoeBlock(nn.Module):
         config: PretrainedConfig,
         quant_config: Optional[QuantizationConfig] = None,
         layer_id: int = -1,
+        prefix: str = "",
     ):
         super().__init__()
         self.tp_size = get_tensor_model_parallel_world_size()
@@ -159,10 +160,15 @@ class HunYuanSparseMoeBlock(nn.Module):
             reduce_results=False,
             renormalize=True if top_k > 1 else False,
             quant_config=quant_config,
+            prefix=f"{prefix}.experts",
         )
 
         self.gate = ReplicatedLinear(
-            config.hidden_size, config.num_experts, bias=False, quant_config=None
+            config.hidden_size,
+            config.num_experts,
+            bias=False,
+            quant_config=None,
+            prefix=f"{prefix}.gate",
         )
         if config.use_mixed_mlp_moe > 0:
             # Get layer_id num_shared_expert if config.num_shared_expert is a list
@@ -517,6 +523,7 @@ class HunYuanDecoderLayer(nn.Module):
             config=config,
             quant_config=quant_config,
             layer_id=layer_id,
+            prefix=f"{prefix}.mlp",
         )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = RMSNorm(
