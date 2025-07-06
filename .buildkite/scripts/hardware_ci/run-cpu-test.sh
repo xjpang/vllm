@@ -72,10 +72,10 @@ function cpu_tests() {
 
   # Note: disable it until supports V1
   # Run AWQ test
-  # docker exec cpu-test-"$NUMA_NODE" bash -c "
-  #   set -e
-  #   VLLM_USE_V1=0 pytest -s -v \
-  #   tests/quantization/test_ipex_quant.py"
+  docker exec cpu-test-"$NUMA_NODE" bash -c "
+    set -e
+    VLLM_USE_V1=0 pytest -s -v \
+    tests/quantization/test_ipex_quant.py"
 
   # online serving
   docker exec cpu-test-"$NUMA_NODE" bash -c "
