@@ -1799,7 +1799,7 @@ def create_server_unix_socket(path: str) -> socket.socket:
 def validate_api_server_args(args):
     valid_tool_parses = ToolParserManager.tool_parsers.keys()
     if args.enable_auto_tool_choice \
-            and args.tool_call_parser not in valid_tool_parses:
+        and args.tool_call_parser not in valid_tool_parses:
         raise KeyError(f"invalid tool call parser: {args.tool_call_parser} "
                        f"(chose from {{ {','.join(valid_tool_parses)} }})")
 
@@ -1919,14 +1919,18 @@ async def run_server_worker(listen_address,
 
 
 if __name__ == "__main__":
-    # NOTE(simon):
-    # This section should be in sync with vllm/entrypoints/cli/main.py for CLI
-    # entrypoints.
-    cli_env_setup()
-    parser = FlexibleArgumentParser(
-        description="vLLM OpenAI-Compatible RESTful API server.")
-    parser = make_arg_parser(parser)
-    args = parser.parse_args()
-    validate_parsed_serve_args(args)
+    try:
+        # NOTE(simon):
+        # This section should be in sync with vllm/entrypoints/cli/main.py for CLI
+        # entrypoints.
+        cli_env_setup()
+        parser = FlexibleArgumentParser(
+            description="vLLM OpenAI-Compatible RESTful API server.")
+        parser = make_arg_parser(parser)
+        args = parser.parse_args()
+        validate_parsed_serve_args(args)
 
-    uvloop.run(run_server(args))
+        uvloop.run(run_server(args))
+    except Exception as e:
+        logger.error(str(e))
+        raise
