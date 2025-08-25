@@ -1,13 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Adapted from qwen3coder xml parser, All rights reserved.
-# ruff: noqa: E501
 
-import ast
 import json
 import uuid
 from collections.abc import Sequence
-from typing import Any, Optional, Union
+from typing import Any, List, Optional, Union
 
 import regex as re
 
@@ -44,23 +42,18 @@ class SeedOssToolParser(ToolParser):
         self.function_end_token: str = "</function>"
         self.parameter_prefix: str = "<parameter="
         self.parameter_end_token: str = "</parameter>"
-        self.think_start_token: str = "<seed:think>"
-        self.think_end_token: str = "</seed:think>"
         self.is_tool_call_started: bool = False
-        self.is_thinking_end: bool = False
         self.failed_count: int = 0
         self._reset_streaming_state()
 
         self.tool_call_start_token_id = self.vocab.get(
             self.tool_call_start_token)
         self.tool_call_end_token_id = self.vocab.get(self.tool_call_end_token)
-        self.think_end_token_id = self.vocab.get(self.think_end_token)
 
-        if (self.tool_call_start_token_id is None
-                or self.tool_call_end_token_id is None):
+        if self.tool_call_start_token_id is None or self.tool_call_end_token_id is None:
             raise RuntimeError(
-                "Seed_Oss XML parser: tokenizer did not include "
-                "<seed:tool_call> or its closing tag.")
+                "Seed_Oss XML parser: tokenizer did not include <seed:tool_call> or its closing tag."
+            )
 
         tool_start_re = re.escape(self.tool_call_start_token)
         tool_end_re = re.escape(self.tool_call_end_token)
@@ -71,13 +64,15 @@ class SeedOssToolParser(ToolParser):
             rf"{tool_start_re}(.*?){tool_end_re}|{tool_start_re}(.*?)$",
             re.DOTALL)
 
+        # 其余 regex 与原版一致
         self.tool_call_function_regex = re.compile(
             r"<function=(.*?)</function>|<function=(.*)$", re.DOTALL)
         self.tool_call_parameter_regex = re.compile(
             r"<parameter=(.*?)</parameter>|<parameter=(.*?)$", re.DOTALL)
 
-        logger.info("vLLM Seed-Oss XML tool parser loaded (%s).",
-                    self.__class__.__name__)
+        logger.info(
+            f"vLLM Seed-Oss XML tool parser loaded ({self.__class__.__name__})."
+        )
 
     def _generate_tool_call_id(self) -> str:
         """Generate a unique tool call ID."""
@@ -88,7 +83,7 @@ class SeedOssToolParser(ToolParser):
         self.current_tool_index = 0
         self.is_tool_call_started = False
         self.header_sent = False
-        self.current_tool_id = -1
+        self.current_tool_id = None
         self.current_function_name = None
         self.current_param_name = None
         self.current_param_value = ""
@@ -112,8 +107,7 @@ class SeedOssToolParser(ToolParser):
                         hasattr(config, "function")
                         and hasattr(config.function, "name")):
                     continue
-                if (config.type == "function"
-                        and config.function.name == func_name):
+                if config.type == "function" and config.function.name == func_name:
                     if not hasattr(config.function, "parameters"):
                         return {}
                     params = config.function.parameters
@@ -123,8 +117,8 @@ class SeedOssToolParser(ToolParser):
                         return params
                     else:
                         return {}
-            logger.warning("Tool '%s' is not defined in the tools list.",
-                           func_name)
+            logger.warning(
+                f"Tool '{func_name}' is not defined in the tools list.")
             return {}
 
         def convert_param_value(param_value: str, param_name: str,
@@ -136,10 +130,9 @@ class SeedOssToolParser(ToolParser):
             if param_name not in param_config:
                 if param_config != {}:
                     logger.warning(
-                        "Parsed parameter '%s' is not defined in "
-                        "the tool parameters for tool '%s', "
-                        "directly returning the string value.", param_name,
-                        func_name)
+                        f"Parsed parameter '{param_name}' is not defined in the tool "
+                        f"parameters for tool '{func_name}', directly returning the string value."
+                    )
                 return param_value
 
             if (isinstance(param_config[param_name], dict)
@@ -157,51 +150,46 @@ class SeedOssToolParser(ToolParser):
                   or param_type.startswith("short")
                   or param_type.startswith("unsigned")):
                 try:
-                    param_value = int(param_value)  # type: ignore
-                except (ValueError, TypeError):
+                    param_value = int(param_value)
+                except:
                     logger.warning(
-                        "Parsed value '%s' of parameter '%s' is not an integer in tool "
-                        "'%s', degenerating to string.", param_value,
-                        param_name, func_name)
+                        f"Parsed value '{param_value}' of parameter '{param_name}' is not an integer in tool "
+                        f"'{func_name}', degenerating to string.")
                 return param_value
             elif param_type.startswith("num") or param_type.startswith(
                     "float"):
                 try:
                     float_param_value = float(param_value)
                     param_value = float_param_value if float_param_value - int(
-                        float_param_value) != 0 else int(
-                            float_param_value)  # type: ignore
-                except (ValueError, TypeError):
+                        float_param_value) != 0 else int(float_param_value)
+                except:
                     logger.warning(
-                        "Parsed value '%s' of parameter '%s' is not a float in tool "
-                        "'%s', degenerating to string.", param_value,
-                        param_name, func_name)
+                        f"Parsed value '{param_value}' of parameter '{param_name}' is not a float in tool "
+                        f"'{func_name}', degenerating to string.")
                 return param_value
             elif param_type in ["boolean", "bool", "binary"]:
                 param_value = param_value.lower()
                 if param_value not in ["true", "false"]:
                     logger.warning(
-                        "Parsed value '%s' of parameter '%s' is not a boolean "
-                        "(`true` of `false`) in tool '%s', degenerating to false.",
-                        param_value, param_name, func_name)
+                        f"Parsed value '{param_value}' of parameter '{param_name}' is not a boolean (`true` of `false`) in tool '{func_name}', degenerating to false."
+                    )
                 return param_value == "true"
             else:
                 if param_type == "object" or param_type.startswith("dict"):
                     try:
                         param_value = json.loads(param_value)
                         return param_value
-                    except (ValueError, TypeError, json.JSONDecodeError):
+                    except:
                         logger.warning(
-                            "Parsed value '%s' of parameter '%s' is not a valid JSON "
-                            "object in tool '%s', will try other methods to parse it.",
-                            param_value, param_name, func_name)
+                            f"Parsed value '{param_value}' of parameter '{param_name}' is not a valid JSON object in tool "
+                            f"'{func_name}', will try other methods to parse it."
+                        )
                 try:
-                    param_value = ast.literal_eval(param_value)
-                except (ValueError, SyntaxError):
+                    param_value = eval(param_value)
+                except:
                     logger.warning(
-                        "Parsed value '%s' of parameter '%s' cannot be converted via "
-                        "Python `ast.literal_eval()` in tool '%s', degenerating to string.",
-                        param_value, param_name, func_name)
+                        f"Parsed value '{param_value}' of parameter '{param_name}' cannot be converted via Python `eval()` in tool '{func_name}', degenerating to string."
+                    )
                 return param_value
 
         # Extract function name
@@ -230,7 +218,7 @@ class SeedOssToolParser(ToolParser):
                                                        ensure_ascii=False)),
         )
 
-    def _get_function_calls(self, model_output: str) -> list[str]:
+    def _get_function_calls(self, model_output: str) -> List[str]:
         # Find all tool calls
         matched_ranges = self.tool_call_regex.findall(model_output)
         raw_tool_calls = [
@@ -262,18 +250,8 @@ class SeedOssToolParser(ToolParser):
                                                 tool_calls=[],
                                                 content=model_output)
 
-        # Check if both think start and end tokens are present
-        if (self.think_start_token in model_output
-                and self.think_end_token in model_output):
-            # Find the position of think end token
-            think_end_index = model_output.find(self.think_end_token) + len(
-                self.think_end_token)
-            # Extract content after think end token
-            result_content = model_output[think_end_index:]
-            thinking_content = model_output[:think_end_index]
-
         try:
-            function_calls = self._get_function_calls(result_content)
+            function_calls = self._get_function_calls(model_output)
             if len(function_calls) == 0:
                 return ExtractedToolCallInformation(tools_called=False,
                                                     tool_calls=[],
@@ -296,12 +274,10 @@ class SeedOssToolParser(ToolParser):
                     })
 
             # Extract content before tool calls
-            tool_call_start_index = result_content.find(
-                self.tool_call_start_token)
-            tool_call_start_index = (
-                tool_call_start_index if tool_call_start_index >= 0 else
-                result_content.find(self.tool_call_prefix))
-            content = thinking_content + result_content[:tool_call_start_index]
+            content_index = model_output.find(self.tool_call_start_token)
+            content_index = (content_index if content_index >= 0 else
+                             model_output.find(self.tool_call_prefix))
+            content = model_output[:content_index]  # .rstrip()
 
             return ExtractedToolCallInformation(
                 tools_called=(len(tool_calls) > 0),
@@ -325,14 +301,12 @@ class SeedOssToolParser(ToolParser):
         delta_token_ids: Sequence[int],
         request: ChatCompletionRequest,
     ) -> Union[DeltaMessage, None]:
-        # If no delta text, return None unless
-        # it's an EOS token after tool calls
+        # If no delta text, return None unless it's an EOS token after tool calls
         if not delta_text:
             # Check if this is an EOS token after all tool calls are complete
-            # We check for tool calls in the text even if is_tool_call_started
-            # is False because it might have been reset after processing all tools
-            if (delta_token_ids
-                    and self.tool_call_end_token_id not in delta_token_ids):
+            # We check for tool calls in the text even if is_tool_call_started is False
+            # because it might have been reset after processing all tools
+            if delta_token_ids and self.tool_call_end_token_id not in delta_token_ids:
                 # Count complete tool calls
                 complete_calls = len(
                     self.tool_call_complete_regex.findall(current_text))
@@ -371,22 +345,12 @@ class SeedOssToolParser(ToolParser):
                 self.json_closed = False
 
                 # Check if there are more tool calls
-                if self.current_tool_index >= current_text.count(
-                        self.tool_call_start_token):
+                tool_starts = current_text.count(self.tool_call_start_token)
+                if self.current_tool_index >= tool_starts:
                     # No more tool calls
                     self.is_tool_call_started = False
                 # Continue processing next tool
                 return None
-
-        # Check if end thinking
-        if (not self.is_thinking_end
-                and (self.think_end_token_id in delta_token_ids
-                     or self.think_end_token in delta_text)):
-            self.is_thinking_end = True
-
-        # If thinking hasn't ended yet, don't process any tool calls
-        if not self.is_thinking_end:
-            return DeltaMessage(content=delta_text)
 
         # Handle normal content before tool calls
         if not self.is_tool_call_started:
@@ -403,10 +367,10 @@ class SeedOssToolParser(ToolParser):
                 return None
             else:
                 # Check if we're between tool calls - skip whitespace
-                if (current_text.rstrip().endswith(self.tool_call_end_token)
-                        and delta_text.strip() == ""):
+                if current_text.rstrip().endswith(self.tool_call_end_token):
                     # We just ended a tool call, skip whitespace
-                    return None
+                    if delta_text.strip() == "":
+                        return None
                 # Normal content, no tool call
                 return DeltaMessage(content=delta_text)
 
@@ -419,12 +383,8 @@ class SeedOssToolParser(ToolParser):
 
         # We're in a tool call, find the current tool call portion
         # Need to find the correct tool call based on current_tool_index
-        # Only process tool calls after think_end_token
-        think_end_index = current_text.find(self.think_end_token) + len(
-            self.think_end_token
-        ) if self.think_end_token in current_text else 0
-        tool_starts: list[int] = []
-        idx = think_end_index
+        tool_starts = []
+        idx = 0
         while True:
             idx = current_text.find(self.tool_call_start_token, idx)
             if idx == -1:
@@ -456,8 +416,7 @@ class SeedOssToolParser(ToolParser):
                 if func_end != -1:
                     # Found complete function name
                     self.current_function_name = tool_text[func_start:func_end]
-                    self.current_tool_id = self._generate_tool_call_id(
-                    )  # type: ignore
+                    self.current_tool_id = self._generate_tool_call_id()
                     self.header_sent = True
                     self.in_function = True
 
@@ -488,8 +447,7 @@ class SeedOssToolParser(ToolParser):
         # We've sent header, now handle function body
         if self.in_function:
             # Send opening brace if not sent yet
-            if (not self.json_started
-                    and self.parameter_prefix not in delta_text):
+            if not self.json_started and self.parameter_prefix not in delta_text:
                 self.json_started = True
                 return DeltaMessage(tool_calls=[
                     DeltaToolCall(
@@ -528,9 +486,7 @@ class SeedOssToolParser(ToolParser):
                                         parsed_tool.function.arguments)
                                     break
                     except Exception:
-                        logger.warning(
-                            "Failed to parse tool arguments during streaming.",
-                            exc_info=True)
+                        pass  # Ignore parsing errors during streaming
 
                 result = DeltaMessage(tool_calls=[
                     DeltaToolCall(
