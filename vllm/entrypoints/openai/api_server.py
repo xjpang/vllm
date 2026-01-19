@@ -33,64 +33,51 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 import vllm.envs as envs
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.protocol import EngineClient
-from vllm.entrypoints.anthropic.protocol import (
-    AnthropicError,
-    AnthropicErrorResponse,
-    AnthropicMessagesRequest,
-    AnthropicMessagesResponse,
-)
-from vllm.entrypoints.anthropic.serving_messages import AnthropicServingMessages
+from vllm.entrypoints.anthropic.protocol import (AnthropicError,
+                                                 AnthropicErrorResponse,
+                                                 AnthropicMessagesRequest,
+                                                 AnthropicMessagesResponse)
+from vllm.entrypoints.anthropic.serving_messages import \
+    AnthropicServingMessages
 from vllm.entrypoints.launcher import serve_http
 from vllm.entrypoints.logger import RequestLogger
-from vllm.entrypoints.openai.cli_args import make_arg_parser, validate_parsed_serve_args
+from vllm.entrypoints.openai.cli_args import (make_arg_parser,
+                                              validate_parsed_serve_args)
 from vllm.entrypoints.openai.orca_metrics import metrics_header
-from vllm.entrypoints.openai.protocol import (
-    ChatCompletionRequest,
-    ChatCompletionResponse,
-    CompletionRequest,
-    CompletionResponse,
-    ErrorInfo,
-    ErrorResponse,
-    ResponsesRequest,
-    ResponsesResponse,
-    StreamingResponsesResponse,
-    TranscriptionRequest,
-    TranscriptionResponseVariant,
-    TranslationRequest,
-    TranslationResponseVariant,
-)
+from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
+                                              ChatCompletionResponse,
+                                              CompletionRequest,
+                                              CompletionResponse, ErrorInfo,
+                                              ErrorResponse, ResponsesRequest,
+                                              ResponsesResponse,
+                                              StreamingResponsesResponse,
+                                              TranscriptionRequest,
+                                              TranscriptionResponseVariant,
+                                              TranslationRequest,
+                                              TranslationResponseVariant)
 from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
 from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
 from vllm.entrypoints.openai.serving_engine import OpenAIServing
-from vllm.entrypoints.openai.serving_models import (
-    BaseModelPath,
-    OpenAIServingModels,
-)
+from vllm.entrypoints.openai.serving_models import (BaseModelPath,
+                                                    OpenAIServingModels)
 from vllm.entrypoints.openai.serving_responses import OpenAIServingResponses
 from vllm.entrypoints.openai.serving_transcription import (
-    OpenAIServingTranscription,
-    OpenAIServingTranslation,
-)
+    OpenAIServingTranscription, OpenAIServingTranslation)
 from vllm.entrypoints.openai.utils import validate_json_request
 from vllm.entrypoints.pooling.classify.serving import ServingClassification
 from vllm.entrypoints.pooling.embed.serving import OpenAIServingEmbedding
 from vllm.entrypoints.pooling.pooling.serving import OpenAIServingPooling
 from vllm.entrypoints.pooling.score.serving import ServingScores
 from vllm.entrypoints.serve.disagg.serving import ServingTokens
-from vllm.entrypoints.serve.elastic_ep.middleware import (
-    ScalingMiddleware,
-)
+from vllm.entrypoints.serve.elastic_ep.middleware import ScalingMiddleware
 from vllm.entrypoints.serve.tokenize.serving import OpenAIServingTokenization
-from vllm.entrypoints.tool_server import DemoToolServer, MCPToolServer, ToolServer
-from vllm.entrypoints.utils import (
-    cli_env_setup,
-    load_aware_call,
-    log_non_default_args,
-    process_chat_template,
-    process_lora_modules,
-    sanitize_message,
-    with_cancellation,
-)
+from vllm.entrypoints.tool_server import (DemoToolServer, MCPToolServer,
+                                          ToolServer)
+from vllm.entrypoints.utils import (cli_env_setup, load_aware_call,
+                                    log_non_default_args,
+                                    process_chat_template,
+                                    process_lora_modules, sanitize_message,
+                                    with_cancellation)
 from vllm.exceptions import VLLMValidationError
 from vllm.logger import init_logger
 from vllm.reasoning import ReasoningParserManager
@@ -730,9 +717,7 @@ def _extract_content_from_chunk(chunk_data: dict) -> str:
     """Extract content from a streaming response chunk."""
     try:
         from vllm.entrypoints.openai.protocol import (
-            ChatCompletionStreamResponse,
-            CompletionStreamResponse,
-        )
+            ChatCompletionStreamResponse, CompletionStreamResponse)
 
         # Try using Completion types for type-safe parsing
         if chunk_data.get("object") == "chat.completion.chunk":
@@ -1376,15 +1361,19 @@ async def run_server_worker(
 
 
 if __name__ == "__main__":
-    # NOTE(simon):
-    # This section should be in sync with vllm/entrypoints/cli/main.py for CLI
-    # entrypoints.
-    cli_env_setup()
-    parser = FlexibleArgumentParser(
-        description="vLLM OpenAI-Compatible RESTful API server."
-    )
-    parser = make_arg_parser(parser)
-    args = parser.parse_args()
-    validate_parsed_serve_args(args)
+    try:
+        # NOTE(simon):
+        # This section should be in sync with vllm/entrypoints/cli/main.py for CLI
+        # entrypoints.
+        cli_env_setup()
+        parser = FlexibleArgumentParser(
+            description="vLLM OpenAI-Compatible RESTful API server."
+        )
+        parser = make_arg_parser(parser)
+        args = parser.parse_args()
+        validate_parsed_serve_args(args)
 
-    uvloop.run(run_server(args))
+        uvloop.run(run_server(args))
+    except Exception as e:
+        logger.error(str(e))
+        raise
