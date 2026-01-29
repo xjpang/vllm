@@ -37,36 +37,25 @@ from vllm.entrypoints.anthropic.serving import AnthropicServingMessages
 from vllm.entrypoints.chat_utils import load_chat_template
 from vllm.entrypoints.launcher import serve_http
 from vllm.entrypoints.logger import RequestLogger
-from vllm.entrypoints.mcp.tool_server import DemoToolServer, MCPToolServer, ToolServer
+from vllm.entrypoints.mcp.tool_server import (DemoToolServer, MCPToolServer,
+                                              ToolServer)
 from vllm.entrypoints.openai.chat_completion.serving import OpenAIServingChat
-from vllm.entrypoints.openai.cli_args import make_arg_parser, validate_parsed_serve_args
+from vllm.entrypoints.openai.cli_args import (make_arg_parser,
+                                              validate_parsed_serve_args)
 from vllm.entrypoints.openai.completion.serving import OpenAIServingCompletion
-from vllm.entrypoints.openai.engine.protocol import (
-    ErrorInfo,
-    ErrorResponse,
-)
+from vllm.entrypoints.openai.engine.protocol import ErrorInfo, ErrorResponse
 from vllm.entrypoints.openai.engine.serving import OpenAIServing
 from vllm.entrypoints.openai.models.protocol import BaseModelPath
-from vllm.entrypoints.openai.models.serving import (
-    OpenAIServingModels,
-)
+from vllm.entrypoints.openai.models.serving import OpenAIServingModels
 from vllm.entrypoints.openai.responses.serving import OpenAIServingResponses
 from vllm.entrypoints.openai.translations.serving import (
-    OpenAIServingTranscription,
-    OpenAIServingTranslation,
-)
+    OpenAIServingTranscription, OpenAIServingTranslation)
 from vllm.entrypoints.serve.disagg.serving import ServingTokens
-from vllm.entrypoints.serve.elastic_ep.middleware import (
-    ScalingMiddleware,
-)
+from vllm.entrypoints.serve.elastic_ep.middleware import ScalingMiddleware
 from vllm.entrypoints.serve.tokenize.serving import OpenAIServingTokenization
-from vllm.entrypoints.utils import (
-    cli_env_setup,
-    log_non_default_args,
-    log_version_and_model,
-    process_lora_modules,
-    sanitize_message,
-)
+from vllm.entrypoints.utils import (cli_env_setup, log_non_default_args,
+                                    log_version_and_model,
+                                    process_lora_modules, sanitize_message)
 from vllm.exceptions import VLLMValidationError
 from vllm.logger import init_logger
 from vllm.reasoning import ReasoningParserManager
@@ -346,12 +335,10 @@ class XRequestIdMiddleware:
 def _extract_content_from_chunk(chunk_data: dict) -> str:
     """Extract content from a streaming response chunk."""
     try:
-        from vllm.entrypoints.openai.chat_completion.protocol import (
-            ChatCompletionStreamResponse,
-        )
-        from vllm.entrypoints.openai.completion.protocol import (
-            CompletionStreamResponse,
-        )
+        from vllm.entrypoints.openai.chat_completion.protocol import \
+            ChatCompletionStreamResponse
+        from vllm.entrypoints.openai.completion.protocol import \
+            CompletionStreamResponse
 
         # Try using Completion types for type-safe parsing
         if chunk_data.get("object") == "chat.completion.chunk":
@@ -493,36 +480,30 @@ def build_app(args: Namespace) -> FastAPI:
     from vllm.entrypoints.serve import register_vllm_serve_api_routers
 
     register_vllm_serve_api_routers(app)
-    from vllm.entrypoints.openai.chat_completion.api_router import (
-        attach_router as register_chat_api_router,
-    )
+    from vllm.entrypoints.openai.chat_completion.api_router import \
+        attach_router as register_chat_api_router
 
     register_chat_api_router(app)
 
-    from vllm.entrypoints.openai.responses.api_router import (
-        attach_router as register_responses_api_router,
-    )
+    from vllm.entrypoints.openai.responses.api_router import \
+        attach_router as register_responses_api_router
 
     register_responses_api_router(app)
-    from vllm.entrypoints.openai.translations.api_router import (
-        attach_router as register_translations_api_router,
-    )
+    from vllm.entrypoints.openai.translations.api_router import \
+        attach_router as register_translations_api_router
 
     register_translations_api_router(app)
 
-    from vllm.entrypoints.openai.completion.api_router import (
-        attach_router as register_completion_api_router,
-    )
+    from vllm.entrypoints.openai.completion.api_router import \
+        attach_router as register_completion_api_router
 
     register_completion_api_router(app)
-    from vllm.entrypoints.anthropic.api_router import (
-        attach_router as register_anthropic_api_router,
-    )
+    from vllm.entrypoints.anthropic.api_router import \
+        attach_router as register_anthropic_api_router
 
     register_anthropic_api_router(app)
-    from vllm.entrypoints.openai.models.api_router import (
-        attach_router as register_models_api_router,
-    )
+    from vllm.entrypoints.openai.models.api_router import \
+        attach_router as register_models_api_router
 
     register_models_api_router(app)
     from vllm.entrypoints.sagemaker.routes import register_sagemaker_routes
@@ -977,15 +958,19 @@ async def run_server_worker(
 
 
 if __name__ == "__main__":
-    # NOTE(simon):
-    # This section should be in sync with vllm/entrypoints/cli/main.py for CLI
-    # entrypoints.
-    cli_env_setup()
-    parser = FlexibleArgumentParser(
-        description="vLLM OpenAI-Compatible RESTful API server."
-    )
-    parser = make_arg_parser(parser)
-    args = parser.parse_args()
-    validate_parsed_serve_args(args)
+    try:
+        # NOTE(simon):
+        # This section should be in sync with vllm/entrypoints/cli/main.py for CLI
+        # entrypoints.
+        cli_env_setup()
+        parser = FlexibleArgumentParser(
+            description="vLLM OpenAI-Compatible RESTful API server."
+        )
+        parser = make_arg_parser(parser)
+        args = parser.parse_args()
+        validate_parsed_serve_args(args)
 
-    uvloop.run(run_server(args))
+        uvloop.run(run_server(args))
+    except Exception as e:
+        logger.error(str(e))
+        raise
