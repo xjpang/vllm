@@ -16,6 +16,10 @@ import importlib
 
 _CLASS_TO_MODULE: dict[str, str] = {
     "AfmoeConfig": "vllm.transformers_utils.configs.afmoe",
+    "ARCHunyuanVideoConfig": "vllm.transformers_utils.configs.arc_hunyuan_video",
+    "ARCHunyuanVideoVisionConfig": "vllm.transformers_utils.configs.arc_hunyuan_video",
+    "ARCHunyuanVideoAudioConfig": "vllm.transformers_utils.configs.arc_hunyuan_video",
+    "ARCHunyuanVideoTextConfig": "vllm.transformers_utils.configs.arc_hunyuan_video",
     "AXK1Config": "vllm.transformers_utils.configs.AXK1",
     "BagelConfig": "vllm.transformers_utils.configs.bagel",
     "ChatGLMConfig": "vllm.transformers_utils.configs.chatglm",
@@ -73,6 +77,10 @@ _CLASS_TO_MODULE: dict[str, str] = {
 
 __all__ = [
     "AfmoeConfig",
+    "ARCHunyuanVideoConfig",
+    "ARCHunyuanVideoVisionConfig",
+    "ARCHunyuanVideoAudioConfig",
+    "ARCHunyuanVideoTextConfig",
     "AXK1Config",
     "BagelConfig",
     "ChatGLMConfig",
