@@ -11,6 +11,7 @@ Architecture: ARCHunyuanVideoForConditionalGeneration
 """
 
 import math
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from functools import partial
 from typing import Annotated, Any, Literal, TypeAlias
@@ -454,11 +455,13 @@ class ARCHunyuanVideoProcessingInfo(BaseProcessingInfo):
         vision_config = hf_config.vision_config
 
         patch_size = vision_config.patch_size
-        spatial_merge_size = vision_config.spatial_merge_size
+        # Effective merge = spatial_merge_size * anyres_pooling_size
+        effective_merge = (vision_config.spatial_merge_size
+                           * vision_config.anyres_pooling_size)
         force_image_size = vision_config.force_image_size
 
-        grid_h = force_image_size // patch_size // spatial_merge_size
-        grid_w = force_image_size // patch_size // spatial_merge_size
+        grid_h = force_image_size // patch_size // effective_merge
+        grid_w = force_image_size // patch_size // effective_merge
         tokens_per_frame = grid_h * (grid_w + 1) + 2
 
         max_frames = hf_config.max_num_frame
@@ -471,10 +474,11 @@ class ARCHunyuanVideoProcessingInfo(BaseProcessingInfo):
         hf_config = self.get_hf_config()
         vision_config = hf_config.vision_config
         patch_size = vision_config.patch_size
-        spatial_merge_size = vision_config.spatial_merge_size
+        effective_merge = (vision_config.spatial_merge_size
+                           * vision_config.anyres_pooling_size)
         force_image_size = vision_config.force_image_size
-        grid_h = force_image_size // patch_size // spatial_merge_size
-        grid_w = force_image_size // patch_size // spatial_merge_size
+        grid_h = force_image_size // patch_size // effective_merge
+        grid_w = force_image_size // patch_size // effective_merge
         return grid_h * (grid_w + 1) + 2
 
 
@@ -633,7 +637,14 @@ class ARCHunyuanVideoForConditionalGeneration(
             "vision_model.perceive.": "visual.perceive.",
             "speech_encoder.": "audio_encoder.",
             "mlp2.": "audio_projection.mlp.",
-        }
+        },
+        # ARC checkpoint stores vision attention as merged qkv_proj,
+        # but vLLM's HunYuanVisionAttention names the parameter "qkv".
+        # Only rename within vision_model.vit paths (LLM qkv_proj is fine).
+        orig_to_new_regex={
+            re.compile(r"^vision_model\.vit\.(.*)\.self_attn\.qkv_proj\."):
+                r"vision_model.vit.\1.self_attn.qkv.",
+        },
     )
 
     supports_encoder_tp_data = True
@@ -662,7 +673,9 @@ class ARCHunyuanVideoForConditionalGeneration(
 
         hf_config = self.config
         image_start_token_id = hf_config.image_start_token_id
-        spatial_merge_size = hf_config.vision_config.spatial_merge_size
+        # Effective merge for token grid: spatial_merge_size * anyres_pooling_size
+        effective_merge = (hf_config.vision_config.spatial_merge_size
+                           * hf_config.vision_config.anyres_pooling_size)
         xd_num = len(hf_config.text_config.xdrope_section)
 
         input_tokens_tensor = torch.tensor(input_tokens)
@@ -680,8 +693,8 @@ class ARCHunyuanVideoForConditionalGeneration(
             t, h, w = image_grid_thw[image_index]
             _, llm_grid_h, llm_grid_w = (
                 t,
-                h // spatial_merge_size,
-                w // spatial_merge_size,
+                h // effective_merge,
+                w // effective_merge,
             )
 
             token_num = (llm_grid_w + 1) * llm_grid_h
@@ -976,6 +989,14 @@ class ARCHunyuanVideoForConditionalGeneration(
         return self.language_model.compute_logits(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        # Filter out non-parameter tensors from the checkpoint
+        # (e.g. position_ids is a buffer, not a trained parameter)
+        skip_suffixes = (".position_ids",)
+        weights = (
+            (name, tensor)
+            for name, tensor in weights
+            if not name.endswith(skip_suffixes)
+        )
         loader = AutoWeightsLoader(
             self,
             skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),

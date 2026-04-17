@@ -1,9 +1,60 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-"""Configuration classes for ARC-Hunyuan-Video-7B model."""
+"""Configuration and tokenizer classes for ARC-Hunyuan-Video-7B model."""
 
-from transformers import PretrainedConfig
+import sys
+import types
+
+from transformers import PretrainedConfig, PreTrainedTokenizerFast
+
+
+class ARCHunyuanVideoTokenizer(PreTrainedTokenizerFast):
+    """Tokenizer for ARC-Hunyuan-Video-7B.
+
+    A thin wrapper around PreTrainedTokenizerFast that knows the vocab file
+    is named ``hunyuan.tiktoken`` (tiktoken BPE format). Transformers'
+    built-in TikTokenConverter handles the actual conversion.
+    """
+
+    vocab_files_names = {"vocab_file": "hunyuan.tiktoken"}
+    model_input_names = ["input_ids", "attention_mask"]
+
+
+def _register_arc_hunyuan_video_tokenizer():
+    """Make ARCHunyuanVideoTokenizer discoverable by AutoTokenizer.
+
+    ``AutoTokenizer.from_pretrained`` resolves ``tokenizer_class`` names via
+    ``tokenizer_class_from_name``, which iterates
+    ``TOKENIZER_MAPPING_NAMES`` and imports from
+    ``transformers.models.<model_type>``.  We inject our class into that
+    lookup so that the ``"ARCHunyuanVideoTokenizer"`` reference in the HF
+    ``tokenizer_config.json`` resolves without requiring a custom
+    transformers fork.
+    """
+    from transformers.models.auto.tokenization_auto import (
+        TOKENIZER_MAPPING_NAMES,
+    )
+
+    key = "arc_hunyuan_video"
+    if key not in TOKENIZER_MAPPING_NAMES:
+        TOKENIZER_MAPPING_NAMES[key] = (
+            "ARCHunyuanVideoTokenizer",
+            "ARCHunyuanVideoTokenizer",
+        )
+
+    # Provide a synthetic module so that ``importlib.import_module``
+    # inside ``tokenizer_class_from_name`` succeeds.
+    mod_name = "transformers.models.arc_hunyuan_video"
+    if mod_name not in sys.modules:
+        mod = types.ModuleType(mod_name)
+        mod.ARCHunyuanVideoTokenizer = ARCHunyuanVideoTokenizer
+        sys.modules[mod_name] = mod
+
+
+# Register at import time so the tokenizer is available before
+# AutoTokenizer.from_pretrained is called.
+_register_arc_hunyuan_video_tokenizer()
 
 
 class ARCHunyuanVideoVisionConfig(PretrainedConfig):
@@ -225,14 +276,12 @@ class ARCHunyuanVideoConfig(PretrainedConfig):
 
         self.vision_config.text_hidden_size = self.text_config.hidden_size
 
-        # ARC model: effective spatial merge = spatial_merge_size * anyres_pooling_size
-        # The perceive module Conv2d kernel/stride uses this combined value.
-        # Reference: num_patches = force_image_size // 32 // 2 = 640 // 64 = 10
-        # This yields 10*(10+1)+2 = 112 tokens per frame.
-        self.vision_config.spatial_merge_size = (
-            self.vision_config.spatial_merge_size
-            * self.vision_config.anyres_pooling_size
-        )
+        # ARC model: the perceive Conv2d uses spatial_merge_size (=2) as
+        # kernel/stride.  The effective merge for token-count calculations is
+        # spatial_merge_size * anyres_pooling_size (=4), but we must NOT
+        # overwrite spatial_merge_size here because HunYuanVisionPatchMerger
+        # uses it directly as the Conv2d kernel size and must match the
+        # checkpoint weights [2304, 1152, 2, 2].
 
         # Ensure XDRoPE configuration is set for the text model.
         # Reference: convert_config_to_legacy sets rope_scaling with
@@ -255,13 +304,22 @@ class ARCHunyuanVideoConfig(PretrainedConfig):
                 "xdrope_section": xdrope_section_abs,
             }
 
+        # The HF config.json has max_position_embeddings=1024 as the base
+        # RoPE window. With dynamic NTK-alpha scaling (alpha=1000), the
+        # model supports much longer sequences. Update to the actual
+        # supported context length so vLLM's max_model_len validation
+        # accepts it.
+        if self.text_config.max_position_embeddings < 20480:
+            self.text_config.max_position_embeddings = 20480
+
         self._attn_implementation = kwargs.pop("attn_implementation", None)
 
     def __setattr__(self, key, value):
         if (
             (text_config := super().__getattribute__("__dict__").get("text_config"))
             is not None
-            and key not in ["dtype", "_attn_implementation_internal"]
+            and key not in ["dtype", "_attn_implementation_internal",
+                            "architectures"]
             and key in text_config.__dict__
         ):
             setattr(text_config, key, value)
@@ -274,6 +332,7 @@ class ARCHunyuanVideoConfig(PretrainedConfig):
             "model_type",
             "dtype",
             "_attn_implementation_internal",
+            "architectures",
         ]:
             text_config = super().__getattribute__("text_config")
             if key in text_config.__dict__:
