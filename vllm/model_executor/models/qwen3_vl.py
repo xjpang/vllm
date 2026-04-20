@@ -35,17 +35,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import BatchFeature
 from transformers.models.qwen2_vl import Qwen2VLImageProcessorFast
-from transformers.models.qwen2_vl.image_processing_qwen2_vl import (
-    smart_resize as image_smart_resize,
-)
-from transformers.models.qwen3_vl import Qwen3VLProcessor, Qwen3VLVideoProcessor
+from transformers.models.qwen2_vl.image_processing_qwen2_vl import \
+    smart_resize as image_smart_resize
+from transformers.models.qwen3_vl import (Qwen3VLProcessor,
+                                          Qwen3VLVideoProcessor)
 from transformers.models.qwen3_vl.configuration_qwen3_vl import (
-    Qwen3VLConfig,
-    Qwen3VLVisionConfig,
-)
-from transformers.models.qwen3_vl.video_processing_qwen3_vl import (
-    smart_resize as video_smart_resize,
-)
+    Qwen3VLConfig, Qwen3VLVisionConfig)
+from transformers.models.qwen3_vl.video_processing_qwen3_vl import \
+    smart_resize as video_smart_resize
 from transformers.video_utils import VideoMetadata
 
 from vllm.compilation.decorators import support_torch_compile
@@ -55,10 +52,8 @@ from vllm.distributed import get_pp_group
 from vllm.logger import init_logger
 from vllm.model_executor.layers.activation import _ACTIVATION_REGISTRY
 from vllm.model_executor.layers.conv import Conv3dLayer
-from vllm.model_executor.layers.linear import (
-    ColumnParallelLinear,
-    RowParallelLinear,
-)
+from vllm.model_executor.layers.linear import (ColumnParallelLinear,
+                                               RowParallelLinear)
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.quantization import QuantizationConfig
 from vllm.model_executor.layers.rotary_embedding import get_rope
@@ -66,77 +61,132 @@ from vllm.model_executor.layers.vocab_parallel_embedding import ParallelLMHead
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 from vllm.model_executor.models.module_mapping import MultiModelKeys
 from vllm.multimodal import MULTIMODAL_REGISTRY
-from vllm.multimodal.evs import (
-    compute_mrope_for_media,
-    compute_retained_tokens_count,
-    compute_retention_mask,
-    recompute_mrope_positions,
-)
-from vllm.multimodal.inputs import (
-    MultiModalDataDict,
-    MultiModalFeatureSpec,
-    MultiModalFieldConfig,
-    MultiModalKwargsItem,
-    MultiModalKwargsItems,
-    PlaceholderRange,
-    VideoItem,
-)
+from vllm.multimodal.evs import (compute_mrope_for_media,
+                                 compute_retained_tokens_count,
+                                 compute_retention_mask,
+                                 recompute_mrope_positions)
+from vllm.multimodal.inputs import (MultiModalDataDict, MultiModalFeatureSpec,
+                                    MultiModalFieldConfig,
+                                    MultiModalKwargsItem,
+                                    MultiModalKwargsItems, PlaceholderRange,
+                                    VideoItem)
 from vllm.multimodal.parse import ImageSize, MultiModalDataItems
-from vllm.multimodal.processing import (
-    BaseDummyInputsBuilder,
-    BaseMultiModalProcessor,
-    PromptReplacement,
-    PromptUpdate,
-    PromptUpdateDetails,
-)
+from vllm.multimodal.processing import (BaseDummyInputsBuilder,
+                                        BaseMultiModalProcessor,
+                                        PromptReplacement, PromptUpdate,
+                                        PromptUpdateDetails)
 from vllm.sequence import IntermediateTensors
 from vllm.utils.collection_utils import is_list_of
 from vllm.utils.math_utils import round_up
 from vllm.v1.attention.backends.registry import AttentionBackendEnum
 
-from .interfaces import (
-    MultiModalEmbeddings,
-    SupportsEagle3,
-    SupportsLoRA,
-    SupportsMRoPE,
-    SupportsMultiModal,
-    SupportsMultiModalPruning,
-    SupportsPP,
-    _require_is_multimodal,
-)
-from .qwen2_5_vl import (
-    Qwen2_5_VisionAttention,
-    Qwen2_5_VLImageEmbeddingInputs,
-    Qwen2_5_VLImageInputs,
-    Qwen2_5_VLImagePixelInputs,
-    Qwen2_5_VLVideoEmbeddingInputs,
-    Qwen2_5_VLVideoInputs,
-    Qwen2_5_VLVideoPixelInputs,
-)
-from .qwen2_vl import (
-    Qwen2VLMultiModalDataParser,
-    Qwen2VLProcessingInfo,
-    _create_qwen2vl_field_factory,
-)
+from .interfaces import (MultiModalEmbeddings, SupportsEagle3, SupportsLoRA,
+                         SupportsMRoPE, SupportsMultiModal,
+                         SupportsMultiModalPruning, SupportsPP,
+                         _require_is_multimodal)
+from .qwen2_5_vl import (Qwen2_5_VisionAttention,
+                         Qwen2_5_VLImageEmbeddingInputs, Qwen2_5_VLImageInputs,
+                         Qwen2_5_VLImagePixelInputs,
+                         Qwen2_5_VLVideoEmbeddingInputs, Qwen2_5_VLVideoInputs,
+                         Qwen2_5_VLVideoPixelInputs)
+from .qwen2_vl import (Qwen2VLMultiModalDataParser, Qwen2VLProcessingInfo,
+                       _create_qwen2vl_field_factory)
 from .qwen3 import Qwen3ForCausalLM, Qwen3Model
-from .utils import (
-    AutoWeightsLoader,
-    PPMissingLayer,
-    WeightsMapper,
-    _merge_multimodal_embeddings,
-    maybe_prefix,
-)
-from .vision import (
-    get_vit_attn_backend,
-    is_vit_use_data_parallel,
-    run_dp_sharded_mrope_vision_model,
-)
+from .utils import (AutoWeightsLoader, PPMissingLayer, WeightsMapper,
+                    _merge_multimodal_embeddings, maybe_prefix)
+from .vision import (get_vit_attn_backend, is_vit_use_data_parallel,
+                     run_dp_sharded_mrope_vision_model)
 
 logger = init_logger(__name__)
 
 # We use 2048 dummy video frames that would generate vision embeddings
 # of the maximum size.
 DUMMY_VIDEO_NUM_FRAMES = 2048
+
+
+# ============================================================
+# 新增：Embedding Projection 相关类
+# ============================================================
+
+class Qwen3VLTextRMSNorm(nn.Module):
+    """用于 Embedding Projection 的 RMSNorm"""
+
+    def __init__(self, hidden_size: int, eps: float = 1e-6):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.eps = eps
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        input_dtype = hidden_states.dtype
+        hidden_states = hidden_states.to(torch.float32)
+        variance = hidden_states.pow(2).mean(-1, keepdim=True)
+        hidden_states = hidden_states * torch.rsqrt(variance + self.eps)
+        return self.weight * hidden_states.to(input_dtype)
+
+
+class EmbeddingProjectionMLP(nn.Module):
+    """
+    Embedding 降维 MLP
+
+    使用分开的 gate_proj 和 up_proj，手动实现 SwiGLU。
+    所有维度参数从 config.json 动态读取，不硬编码。
+    """
+
+    def __init__(
+        self,
+        input_dim: int = 4096,
+        output_dim: int = 1024,
+        intermediate_dim: int = 12288,
+        rms_norm_eps: float = 1e-6,
+        quant_config: QuantizationConfig | None = None,
+        prefix: str = "",
+    ):
+        super().__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.intermediate_dim = intermediate_dim
+
+        self.input_layernorm = Qwen3VLTextRMSNorm(input_dim, eps=rms_norm_eps)
+
+        self.gate_proj = ColumnParallelLinear(
+            input_dim,
+            intermediate_dim,
+            bias=False,
+            quant_config=quant_config,
+            prefix=f"{prefix}.gate_proj" if prefix else "gate_proj",
+        )
+        self.up_proj = ColumnParallelLinear(
+            input_dim,
+            intermediate_dim,
+            bias=False,
+            quant_config=quant_config,
+            prefix=f"{prefix}.up_proj" if prefix else "up_proj",
+        )
+
+        self.down_proj = RowParallelLinear(
+            intermediate_dim,
+            output_dim,
+            bias=False,
+            quant_config=quant_config,
+            prefix=f"{prefix}.down_proj" if prefix else "down_proj",
+        )
+
+        self.output_layernorm = Qwen3VLTextRMSNorm(output_dim, eps=rms_norm_eps)
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        hidden_states = self.input_layernorm(hidden_states)
+
+        gate, _ = self.gate_proj(hidden_states)
+        up, _ = self.up_proj(hidden_states)
+        hidden_states = F.silu(gate) * up
+
+        hidden_states, _ = self.down_proj(hidden_states)
+
+        hidden_states = self.output_layernorm(hidden_states)
+
+        return hidden_states
+
+# ============================================================
 
 
 class Qwen3_VisionPatchEmbed(nn.Module):
@@ -1123,6 +1173,42 @@ class Qwen3LLMModel(Qwen3Model):
                 "len(deepstack_visual_indexes)"
             )
 
+        # ====== 新增：初始化 Embedding Projection ======
+        self.embedding_projection = None
+        config = vllm_config.model_config.hf_config
+        text_config = getattr(config, 'text_config', config)
+        quant_config = vllm_config.quant_config
+
+        if hasattr(text_config, 'embedding_projection'):
+            proj_config = text_config.embedding_projection
+            if isinstance(proj_config, dict):
+                enabled = proj_config.get('enabled', False)
+                if enabled:
+                    input_dim = proj_config.get(
+                        'input_dim', text_config.hidden_size)
+                    output_dim = proj_config.get('output_dim', 1024)
+                    intermediate_dim = proj_config.get(
+                        'intermediate_dim', input_dim * 3)
+                    rms_norm_eps = proj_config.get(
+                        'rms_norm_eps',
+                        getattr(text_config, 'rms_norm_eps', 1e-6))
+
+                    self.embedding_projection = EmbeddingProjectionMLP(
+                        input_dim=input_dim,
+                        output_dim=output_dim,
+                        intermediate_dim=intermediate_dim,
+                        rms_norm_eps=rms_norm_eps,
+                        quant_config=quant_config,
+                        prefix=(f"{prefix}.embedding_projection"
+                                if prefix else "embedding_projection"),
+                    )
+                    logger.info(
+                        "Initialized EmbeddingProjectionMLP: "
+                        "input_dim=%d, output_dim=%d, intermediate_dim=%d",
+                        input_dim, output_dim, intermediate_dim,
+                    )
+        # ================================================
+
     def forward(
         self,
         input_ids: torch.Tensor | None,
@@ -1170,10 +1256,82 @@ class Qwen3LLMModel(Qwen3Model):
             )
         hidden_states, _ = self.norm(hidden_states, residual)
 
+        # ====== 新增：应用 Embedding Projection ======
+        if self.embedding_projection is not None:
+            hidden_states = self.embedding_projection(hidden_states)
+        # =============================================
+
         if len(aux_hidden_states) > 0:
             return hidden_states, aux_hidden_states
         return hidden_states
 
+    def load_weights(
+        self, weights: Iterable[tuple[str, torch.Tensor]]
+    ) -> set[str]:
+        """重写 load_weights 以正确处理 embedding_projection 权重"""
+        weights_list = list(weights)
+
+        embedding_proj_weights = []
+        other_weights = []
+
+        for name, weight in weights_list:
+            if 'embedding_projection' in name:
+                embedding_proj_weights.append((name, weight))
+            else:
+                other_weights.append((name, weight))
+
+        # 用父类方法加载其他权重
+        loaded_params = super().load_weights(iter(other_weights))
+
+        # 单独处理 embedding_projection 的权重
+        if self.embedding_projection is not None and embedding_proj_weights:
+            loaded_params.update(
+                self._load_embedding_projection_weights(
+                    embedding_proj_weights)
+            )
+
+        return loaded_params
+
+    def _load_embedding_projection_weights(
+        self,
+        weights: list[tuple[str, torch.Tensor]],
+    ) -> set[str]:
+        """加载 embedding_projection 的权重"""
+        params_dict = dict(
+            self.embedding_projection.named_parameters(
+                remove_duplicate=False))
+        loaded_params: set[str] = set()
+
+        for name, loaded_weight in weights:
+            # 移除 'embedding_projection.' 前缀
+            if name.startswith('embedding_projection.'):
+                relative_name = name[len('embedding_projection.'):]
+            else:
+                relative_name = name
+
+            if relative_name in params_dict:
+                param = params_dict[relative_name]
+                weight_loader = getattr(
+                    param, "weight_loader", default_weight_loader)
+                weight_loader(param, loaded_weight)
+                loaded_params.add(
+                    f"embedding_projection.{relative_name}")
+            else:
+                logger.warning(
+                    "Unexpected embedding_projection weight: %s, "
+                    "relative: %s", name, relative_name,
+                )
+
+        logger.info(
+            "Loaded embedding_projection weights: %d parameters",
+            len(loaded_params),
+        )
+        return loaded_params
+
+
+# ============================================================
+# 以下类完全不改动
+# ============================================================
 
 class Qwen3LLMForCausalLM(Qwen3ForCausalLM):
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
