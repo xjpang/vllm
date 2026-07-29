@@ -768,6 +768,34 @@ class Qwen3_5ForConditionalGenerationConfig(VerifyAndUpdateConfig):
             )
 
 
+class Qwen3_5ForSequenceClassificationConfig(Qwen3_5ForConditionalGenerationConfig):
+    """Config-verification hook for the Qwen3.5 multi-head classifier.
+
+    Reuses the Qwen3.5 mamba-cache dtype resolution and additionally forces
+    the ``problem_type`` to ``multi_label_classification`` so that the vLLM
+    pooler picks the independent-sigmoid activation (matching the
+    multi-head BCE training objective).
+    """
+
+    @staticmethod
+    def verify_and_update_config(vllm_config: "VllmConfig") -> None:
+        # Reuse Qwen3.5's mamba_ssm_cache_dtype resolution.
+        Qwen3_5ForConditionalGenerationConfig.verify_and_update_config(vllm_config)
+
+    @staticmethod
+    def verify_and_update_model_config(model_config: "ModelConfig") -> None:
+        hf_config = model_config.hf_config
+        # Force multi-label (independent sigmoid) activation.
+        if getattr(hf_config, "problem_type", None) != "multi_label_classification":
+            hf_config.problem_type = "multi_label_classification"
+        # Mirror num_models -> num_labels for vLLM's classifier plumbing.
+        num_models = getattr(
+            hf_config, "num_models", getattr(hf_config, "num_labels", None)
+        )
+        if num_models is not None:
+            hf_config.num_labels = int(num_models)
+
+
 class ColQwen3_5Config(Qwen3_5ForConditionalGenerationConfig):
     """ColQwen3.5 (late-interaction retrieval) inherits Qwen3.5's mamba cache
     handling and additionally serves BIDIRECTIONAL attention: ColPali-style
@@ -862,6 +890,7 @@ MODELS_CONFIG_MAP: dict[str, type[VerifyAndUpdateConfig]] = {
     "Qwen3VLForSequenceClassification": Qwen3VLForSequenceClassificationConfig,
     "Qwen3_5ForConditionalGeneration": Qwen3_5ForConditionalGenerationConfig,
     "Qwen3_5MoeForConditionalGeneration": Qwen3_5ForConditionalGenerationConfig,
+    "Qwen3_5ForSequenceClassification": Qwen3_5ForSequenceClassificationConfig,
     "UnlimitedOCRForCausalLM": UnlimitedOCRForCausalLMConfig,
     "VoyageQwen3BidirectionalEmbedModel": VoyageQwen3BidirectionalEmbedModelConfig,
     "XLMRobertaModel": JinaRobertaModelConfig,

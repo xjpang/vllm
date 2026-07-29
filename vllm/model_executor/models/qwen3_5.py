@@ -47,6 +47,8 @@ from vllm.model_executor.layers.mamba.mamba_utils import (
     MambaStateDtypeCalculator,
     MambaStateShapeCalculator,
 )
+from vllm.model_executor.layers.pooler.seqwise.methods import LastPool
+from vllm.model_executor.layers.pooler.special import DispatchPooler
 from vllm.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead,
     VocabParallelEmbedding,
@@ -387,137 +389,172 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLMBase, QwenNextMixtureOfExperts):
 
 
 ########################################################
-# Qwen3_5-Dense
+# Qwen3.5 (text-only) Multi-head Sequence Classification
 ########################################################
 
 
-@MULTIMODAL_REGISTRY.register_processor(
-    Qwen3VLMultiModalProcessor,
-    info=Qwen3_5ProcessingInfo,
-    dummy_inputs=Qwen3VLDummyInputsBuilder,
-)
-class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid):
-    # Qwen3.5 does not support multimodal pruning (EVS).
-    supports_multimodal_pruning = False
+class Qwen3_5ClassifierHead(nn.Module):
+    """Shared MLP feature extractor + N independent binary Linear heads.
 
-    packed_modules_mapping = Qwen3VLForConditionalGeneration.packed_modules_mapping | {
-        "in_proj_qkvz": ["in_proj_qkv", "in_proj_z"],
-        "in_proj_ba": ["in_proj_b", "in_proj_a"],
-    }
+    Applied on top of last-token pooled hidden states. Produces raw logits of
+    shape ``[B, num_models]``. Independent-sigmoid activation is applied later
+    by the ``ClassifierPoolerHead`` via ``PoolerMultiLabelClassify``.
+    """
 
-    def __init__(self, *, vllm_config: VllmConfig, prefix: str = "model"):
-        # protocols have not __init__ method, so we need to use nn.Module.__init__
-        nn.Module.__init__(self)
-        config: Qwen3_5Config = vllm_config.model_config.hf_config
-        quant_config = vllm_config.quant_config
-        multimodal_config = vllm_config.model_config.multimodal_config
+    def __init__(
+        self,
+        hidden_size: int,
+        mlp_hidden_size: int,
+        num_models: int,
+        classifier_bias: bool = False,
+        classifier_dropout: float = 0.0,
+        dtype: torch.dtype | None = None,
+    ) -> None:
+        super().__init__()
+        # NOTE: ``shared_mlp`` MUST be an ``nn.Sequential`` with the Linear at
+        # index 0 to match checkpoint keys ``shared_mlp.0.weight`` etc.
+        layers: list[nn.Module] = [
+            nn.Linear(
+                hidden_size, mlp_hidden_size, bias=classifier_bias, dtype=dtype
+            ),
+            nn.GELU(),
+        ]
+        if classifier_dropout > 0.0:
+            layers.append(nn.Dropout(classifier_dropout))
+        self.shared_mlp = nn.Sequential(*layers)
+        # Per-model binary heads: N x Linear(mlp_hidden, 1) — matches
+        # checkpoint keys ``heads.<i>.weight``.
+        self.heads = nn.ModuleList(
+            [
+                nn.Linear(mlp_hidden_size, 1, bias=classifier_bias, dtype=dtype)
+                for _ in range(num_models)
+            ]
+        )
 
-        self.config = config
+    def forward(self, pooled: torch.Tensor) -> torch.Tensor:
+        # Cast pooled features into the head's parameter dtype for stable
+        # matmul (mirrors the training-time behaviour).
+        head_dtype = self.shared_mlp[0].weight.dtype
+        features = self.shared_mlp(pooled.to(head_dtype))  # [B, H']
+        # Stack per-head scalar logits into [B, num_models].
+        return torch.stack(
+            [head(features).squeeze(-1) for head in self.heads], dim=1
+        )
+
+
+class Qwen3_5ForSequenceClassification(
+    nn.Module,
+    HasInnerState,
+    IsHybrid,
+    SupportsLoRA,
+    SupportsPP,
+):
+    """Qwen3.5 (text-only) multi-head sequence classification model.
+
+    Backbone: :class:`Qwen3_5Model` (mixed linear+full attention text tower).
+    Head:     :class:`Qwen3_5ClassifierHead` (shared MLP + N binary heads).
+    Pooling:  LAST token; independent-sigmoid activation on the raw logits.
+
+    Checkpoint layout (produced by the HF trainer using
+    ``Qwen3_5ForSequenceClassification``)::
+
+        backbone.embed_tokens.weight, backbone.layers.*, backbone.norm.weight
+        shared_mlp.0.weight [+ .bias]
+        heads.<i>.weight    [+ .bias]        (i in 0..num_models-1)
+
+    which is remapped onto vLLM as::
+
+        model.embed_tokens.weight, model.layers.*, model.norm.weight
+        classifier.shared_mlp.0.weight
+        classifier.heads.<i>.weight
+    """
+
+    # Mark this as a pooling model so vLLM skips lm_head construction and
+    # dispatches to the pooler for classify tasks.
+    is_pooling_model = True
+
+    # Reuse the packed-module fusion mapping (QKV / gate_up / GDN in_proj) so
+    # loading works even under TP.
+    packed_modules_mapping = Qwen3_5ForCausalLMBase.packed_modules_mapping
+
+    # Remap checkpoint keys: ``backbone.<x>`` -> ``model.<x>``; classifier keys
+    # (``shared_mlp.*`` and ``heads.*``) are renamed to live under
+    # ``classifier.*`` so they load into ``self.classifier``.
+    hf_to_vllm_mapper = WeightsMapper(
+        orig_to_new_prefix={
+            "backbone.": "model.",
+            "shared_mlp.": "classifier.shared_mlp.",
+            "heads.": "classifier.heads.",
+        }
+    )
+
+    def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
+        super().__init__()
+
+        self.vllm_config = vllm_config
         self.model_config = vllm_config.model_config
-        self.multimodal_config = multimodal_config
-        self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
-        # Qwen3.5 does not support multimodal pruning (EVS).
-        self.is_multimodal_pruning_enabled = False
+        self.quant_config = vllm_config.quant_config
+        cache_config = vllm_config.cache_config
 
-        with self._mark_tower_model(vllm_config, {"image", "video"}):
-            self.visual = Qwen3_VisionTransformer(
-                config.vision_config,
-                norm_eps=getattr(config, "rms_norm_eps", 1e-6),
-                quant_config=quant_config,
-                prefix=maybe_prefix(prefix, "visual"),
+        # Same guard as Qwen3_5ForCausalLMBase.
+        if cache_config.mamba_cache_mode == "all":
+            raise NotImplementedError(
+                "Qwen3.5 currently does not support 'all' prefix caching, "
+                "please use '--mamba-cache-mode=align' instead"
             )
 
-        with self._mark_language_model(vllm_config):
-            self.language_model = Qwen3_5ForCausalLM(
-                vllm_config=vllm_config, prefix=maybe_prefix(prefix, "language_model")
-            )
+        hf_config = vllm_config.model_config.hf_config
+        self.config = hf_config
 
+        # Backbone: text-only Qwen3.5 model.
+        self.model = Qwen3_5Model(
+            vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model")
+        )
         self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
+            self.model.make_empty_intermediate_tensors
         )
 
-    def embed_input_ids(
-        self,
-        input_ids: torch.Tensor,
-        multimodal_embeddings: MultiModalEmbeddings | None = None,
-        *,
-        is_multimodal: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        inputs_embeds = self._embed_text_input_ids(
-            input_ids,
-            self.language_model.embed_input_ids,
-            is_multimodal=is_multimodal,
+        # Classification head knobs (read from the top-level HF config).
+        num_models: int = int(
+            getattr(hf_config, "num_models", getattr(hf_config, "num_labels", 3))
+        )
+        hidden_size: int = int(
+            getattr(
+                hf_config,
+                "hidden_size",
+                vllm_config.model_config.hf_text_config.hidden_size,
+            )
+        )
+        mlp_hidden_size: int = int(getattr(hf_config, "mlp_hidden_size", hidden_size))
+        classifier_bias: bool = bool(getattr(hf_config, "classifier_bias", False))
+        classifier_dropout: float = float(
+            getattr(hf_config, "classifier_dropout", 0.0)
         )
 
-        if multimodal_embeddings is None or len(multimodal_embeddings) == 0:
-            return inputs_embeds
-
-        is_multimodal = _require_is_multimodal(is_multimodal)
-
-        inputs_embeds = _merge_multimodal_embeddings(
-            inputs_embeds=inputs_embeds,
-            multimodal_embeddings=multimodal_embeddings,
-            is_multimodal=is_multimodal,
+        # Build the multi-head classifier in the model's head dtype so weights
+        # load cleanly from the (usually bfloat16) checkpoint.
+        self.classifier = Qwen3_5ClassifierHead(
+            hidden_size=hidden_size,
+            mlp_hidden_size=mlp_hidden_size,
+            num_models=num_models,
+            classifier_bias=classifier_bias,
+            classifier_dropout=classifier_dropout,
+            dtype=vllm_config.model_config.head_dtype,
         )
 
-        return inputs_embeds
-
-    def recompute_mrope_positions(self, *args, **kwargs):
-        raise NotImplementedError(
-            "Qwen3.5 does not support multimodal pruning (EVS). "
-            "recompute_mrope_positions should never be called."
+        # Pooler: LAST-token pooling -> classifier -> sigmoid.
+        # ``resolve_classifier_act_fn`` will pick ``PoolerMultiLabelClassify``
+        # (sigmoid) because the config has
+        # ``problem_type="multi_label_classification"``.
+        pooler_config = vllm_config.model_config.pooler_config
+        assert pooler_config is not None
+        self.pooler = DispatchPooler.for_seq_cls(
+            pooler_config,
+            pooling=LastPool(),
+            classifier=self.classifier,
         )
 
-    def forward(
-        self,
-        input_ids: torch.Tensor,
-        positions: torch.Tensor,
-        intermediate_tensors: IntermediateTensors | None = None,
-        inputs_embeds: torch.Tensor | None = None,
-        **kwargs: object,
-    ) -> torch.Tensor | IntermediateTensors:
-        """Run forward pass for Qwen3.5.
-
-        Args:
-            input_ids: Flattened (concatenated) input_ids corresponding to a
-                batch.
-            positions: Flattened (concatenated) position ids corresponding to a
-                batch.
-                **NOTE**: If mrope is enabled (default setting for Qwen3VL
-                opensource models), the shape will be `(3, seq_len)`,
-                otherwise it will be `(seq_len,).
-            intermediate_tensors: Intermediate tensors from previous pipeline
-                stages.
-            inputs_embeds: Pre-computed input embeddings.
-            **kwargs: Additional keyword arguments including:
-                - pixel_values: Pixel values to be fed to a model.
-                    `None` if no images are passed.
-                - image_grid_thw: Tensor `(n_images, 3)` of image 3D grid in
-                    LLM. `None` if no images are passed.
-                - pixel_values_videos: Pixel values of videos to be fed to a
-                    model. `None` if no videos are passed.
-                - video_grid_thw: Tensor `(n_videos, 3)` of video 3D grid in
-                    LLM. `None` if no videos are passed.
-        """
-
-        if intermediate_tensors is not None:
-            inputs_embeds = None
-
-        hidden_states = self.language_model.model(
-            input_ids=input_ids,
-            positions=positions,
-            intermediate_tensors=intermediate_tensors,
-            inputs_embeds=inputs_embeds,
-        )
-
-        return hidden_states
-
-    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        loader = AutoWeightsLoader(
-            self,
-            skip_prefixes=["mtp."],
-        )
-        return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
+    # ---- Mamba / hybrid state plumbing (mirrors Qwen3NextForCausalLM) ----
 
     @classmethod
     def get_mamba_state_dtype_from_config(
@@ -553,8 +590,33 @@ class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid)
         )
 
     @classmethod
-    def get_mamba_state_copy_func(cls) -> tuple[MambaStateCopyFunc, MambaStateCopyFunc]:
+    def get_mamba_state_copy_func(
+        cls,
+    ) -> tuple[MambaStateCopyFunc, MambaStateCopyFunc]:
         return MambaStateCopyFuncCalculator.gated_delta_net_state_copy_func()
+
+    # ---- forward / loading ---------------------------------------------
+
+    def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        return self.model.embed_input_ids(input_ids)
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        positions: torch.Tensor,
+        intermediate_tensors: IntermediateTensors | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        **kwargs: object,
+    ):
+        return self.model(
+            input_ids, positions, intermediate_tensors, inputs_embeds
+        )
+
+    def load_weights(
+        self, weights: Iterable[tuple[str, torch.Tensor]]
+    ) -> set[str]:
+        loader = AutoWeightsLoader(self, skip_prefixes=["mtp."])
+        return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 
 
 ########################################################
@@ -612,7 +674,7 @@ class Qwen3_5_MoeMixtureOfExperts(MixtureOfExperts):
     dummy_inputs=Qwen3VLDummyInputsBuilder,
 )
 class Qwen3_5MoeForConditionalGeneration(
-    Qwen3_5ForConditionalGeneration, Qwen3_5_MoeMixtureOfExperts
+    Qwen3_5_MoeMixtureOfExperts
 ):
     # For MoE LoRA weights loading
     is_3d_moe_weight: bool = True

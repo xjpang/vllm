@@ -330,6 +330,10 @@ _SEQUENCE_CLASSIFICATION_MODELS = {
         "roberta",
         "RobertaForSequenceClassification",
     ),
+    "Qwen3_5ForSequenceClassification": (
+        "qwen3_5",
+        "Qwen3_5ForSequenceClassification",
+    ),
     # [Multimodal]
     "JinaVLForRanking": ("jina_vl", "JinaVLForSequenceClassification"),
     "LlamaNemotronVLForSequenceClassification": (

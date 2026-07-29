@@ -190,4 +190,66 @@ class Qwen3_5Config(PretrainedConfig):
         self.tie_word_embeddings = tie_word_embeddings
 
 
-__all__ = ["Qwen3_5Config", "Qwen3_5TextConfig"]
+class Qwen35ForSequenceClassificationConfig(PretrainedConfig):
+    """Top-level config for the Qwen3.5 multi-head sequence classification
+    router (custom architecture ``Qwen35ForSequenceClassification``).
+
+    The classification checkpoint wraps a Qwen3.5 *text* backbone (extracted
+    from the multimodal Qwen3.5 model) with a shared MLP + N independent
+    binary heads. This config carries both the classifier-head knobs and the
+    nested ``text_config`` (a :class:`Qwen3_5TextConfig`) so that vLLM can
+    rebuild the backbone from the saved checkpoint alone.
+    """
+
+    model_type = "qwen3_5_for_sequence_classification"
+    sub_configs = {"text_config": Qwen3_5TextConfig}
+    keys_to_ignore_at_inference = ["past_key_values"]
+
+    def __init__(
+        self,
+        text_config=None,
+        num_models: int = 3,
+        hidden_size: int = 1024,
+        mlp_hidden_size: int | None = None,
+        classifier_bias: bool = False,
+        classifier_dropout: float = 0.0,
+        l2_normalize: bool = False,
+        model_names: list[str] | None = None,
+        backbone_name_or_path: str = "",
+        tie_word_embeddings: bool = True,
+        **kwargs,
+    ):
+        if isinstance(text_config, dict):
+            self.text_config = self.sub_configs["text_config"](**text_config)
+        elif text_config is None:
+            self.text_config = self.sub_configs["text_config"]()
+        else:
+            self.text_config = text_config
+
+        # ``num_labels`` mirrors ``num_models`` for compatibility with the vLLM
+        # ForSequenceClassification pooling path (which uses ``num_labels``).
+        kwargs.setdefault("num_labels", int(num_models))
+        # Force multi-label (independent-sigmoid) activation.
+        kwargs.setdefault("problem_type", "multi_label_classification")
+
+        self.num_models = int(num_models)
+        self.hidden_size = int(hidden_size)
+        self.mlp_hidden_size = (
+            int(mlp_hidden_size) if mlp_hidden_size is not None else int(hidden_size)
+        )
+        self.classifier_bias = bool(classifier_bias)
+        self.classifier_dropout = float(classifier_dropout)
+        self.l2_normalize = bool(l2_normalize)
+        self.model_names = list(model_names) if model_names is not None else None
+        self.backbone_name_or_path = str(backbone_name_or_path)
+
+        super().__init__(**kwargs)
+        # Set after super().__init__() to avoid v4 PretrainedConfig overwrite.
+        self.tie_word_embeddings = tie_word_embeddings
+
+
+__all__ = [
+    "Qwen3_5Config",
+    "Qwen3_5TextConfig",
+    "Qwen35ForSequenceClassificationConfig",
+]
